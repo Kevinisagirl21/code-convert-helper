@@ -1,5 +1,5 @@
 Command-line interface
 ========================
 
-.. automodule:: py2rust.cli
+.. automodule:: cli
    :members:

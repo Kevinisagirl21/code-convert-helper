@@ -4,11 +4,11 @@ Reporting
 Run summary
 -----------
 
-.. automodule:: py2rust.report.summary
+.. automodule:: report.summary
    :members:
 
 Output-length split check
 ---------------------------
 
-.. automodule:: py2rust.report.split_check
+.. automodule:: report.split_check
    :members:

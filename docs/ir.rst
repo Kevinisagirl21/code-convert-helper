@@ -4,17 +4,17 @@ Intermediate representation (IR)
 Schema
 ------
 
-.. automodule:: py2rust.ir.schema
+.. automodule:: ir.schema
    :members:
 
 Builder (CST -> IR)
 --------------------
 
-.. automodule:: py2rust.ir.builder
+.. automodule:: ir.builder
    :members:
 
 Storage (serialization, read-only locking)
 --------------------------------------------
 
-.. automodule:: py2rust.ir.storage
+.. automodule:: ir.storage
    :members:

@@ -1,5 +1,5 @@
 Stage 0: preflight checks
 ==========================
 
-.. automodule:: py2rust.preflight.checks
+.. automodule:: preflight.checks
    :members:

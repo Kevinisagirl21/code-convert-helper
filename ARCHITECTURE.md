@@ -280,28 +280,40 @@ land):
   it. This is about file organization, not translation correctness, so it
   lives in ordinary tool config rather than being a fixed rule.
 
-## Suggested implementation stack
+## Implementation stack (what v1 actually uses)
 
-Given the primary output is Rust, building the tool itself in Rust is a
-natural fit (and doubles as a proof that the approach works):
+The prototype is implemented in Python, not Rust, so its own tooling
+choices are:
 
-- **Front-end parsing:** `rustpython-parser` crate — gives a full Python
-  AST without shelling out to a Python interpreter.
-- **Comment extraction:** Python's tokenizer behavior can be replicated
-  from the same crate's lexer, or by running a small embedded tokenizer
-  pass matched to it.
-- **IR serialization:** plain `serde` + JSON (or RON, if human-editability
-  during debugging matters more than tooling ubiquity — worth prototyping
-  both).
-- **Rust codegen:** hand-written templating rather than `syn`/`quote`
-  (which normalize away comments and exact formatting) — codegen needs to
-  own comment placement precisely.
-- **Parse-check on output:** `syn` in parse-only mode, used purely as a
-  validator, not a generator.
+- **Front-end parsing:** `libcst`, which — unlike Python's built-in `ast`
+  module — keeps every comment attached to the CST node it belongs to
+  natively. That's why stage 1 doesn't need a separate `tokenize` pass
+  merged back in later: `ir/builder.py` reads leading/trailing comments
+  directly off each `libcst` node as it builds the IR.
+- **IR data structures:** plain `dataclasses` (`ir/schema.py`), serialized
+  with `dataclasses.asdict` + the standard `json` module
+  (`ir/storage.py`), rather than a schema/codegen library like `serde`.
+  Reconstruction from JSON back into typed dataclasses is done by hand via
+  a small `kind`-tag registry, since Python has no built-in equivalent of
+  `serde`'s derive macros.
+- **Rust codegen:** a hand-rolled string-building pretty-printer
+  (`codegen/rust_writer.py`), deliberately not built on an AST-to-AST
+  Rust-generation library — same rationale as the stage-5 notes above,
+  just implemented directly in Python string templates instead of a
+  templating crate.
+- **CLI:** `typer` (type-hint-driven command definitions) with `rich` for
+  formatted terminal output (tables, colored status).
+- **Parse-check on output:** not yet wired up (see `HANDOFF.md`); the
+  `syn`-based validation step described in Stage 6 above is aspirational
+  for this prototype rather than implemented.
 
-This is a recommendation, not a constraint — happy to reconsider if there's
-a reason to prefer implementing the tool in Python instead (e.g. faster
-iteration while the IR schema is still in flux).
+An earlier draft of this document recommended implementing the tool
+itself in Rust instead. That plan was set aside for this prototype in
+favor of Python's faster iteration while the IR schema was still
+changing, and `libcst`'s built-in comment preservation avoiding the need
+to build a custom token-association pass from scratch. The original
+Rust-oriented plan is kept outside this repository rather than deleted;
+ask whoever holds `GOAL.md` if you want to revisit it.
 
 ## Open questions for the next round
 

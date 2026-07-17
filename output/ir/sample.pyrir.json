@@ -1,0 +1,576 @@
+{
+  "schema_version": "v1_core",
+  "source_file": "sample.py",
+  "body": [
+    {
+      "module": "requests",
+      "alias": null,
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 1,
+        "end_line": 1
+      },
+      "kind": "import"
+    },
+    {
+      "node_id": "fn_0001",
+      "name": "clamp",
+      "params": [
+        {
+          "name": "value",
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          }
+        },
+        {
+          "name": "lo",
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          }
+        },
+        {
+          "name": "hi",
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          }
+        }
+      ],
+      "return_type": {
+        "value": "i64",
+        "kind": "concrete"
+      },
+      "body": [
+        {
+          "test": {
+            "op": "<",
+            "left": {
+              "name": "value",
+              "kind": "name"
+            },
+            "right": {
+              "name": "lo",
+              "kind": "name"
+            },
+            "kind": "compare"
+          },
+          "body": [
+            {
+              "value": {
+                "name": "lo",
+                "kind": "name"
+              },
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "return"
+            }
+          ],
+          "orelse": [],
+          "comments": {
+            "leading": [
+              {
+                "text": "# keep value within [lo, hi]",
+                "confidence": 1.0
+              }
+            ],
+            "trailing": []
+          },
+          "kind": "if"
+        },
+        {
+          "test": {
+            "op": ">",
+            "left": {
+              "name": "value",
+              "kind": "name"
+            },
+            "right": {
+              "name": "hi",
+              "kind": "name"
+            },
+            "kind": "compare"
+          },
+          "body": [
+            {
+              "value": {
+                "name": "hi",
+                "kind": "name"
+              },
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "return"
+            }
+          ],
+          "orelse": [],
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "if"
+        },
+        {
+          "value": {
+            "name": "value",
+            "kind": "name"
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "return"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 4,
+        "end_line": 10
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": null,
+      "kind": "function_def"
+    },
+    {
+      "node_id": "fn_0002",
+      "name": "sum_up_to",
+      "params": [
+        {
+          "name": "n",
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          }
+        }
+      ],
+      "return_type": {
+        "value": "i64",
+        "kind": "concrete"
+      },
+      "body": [
+        {
+          "target": "total",
+          "value": {
+            "value": 0,
+            "py_type": "int",
+            "kind": "constant"
+          },
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          },
+          "mutable": true,
+          "target_kind": "name",
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "assign"
+        },
+        {
+          "target": "i",
+          "iter": {
+            "func": {
+              "name": "range",
+              "kind": "name"
+            },
+            "args": [
+              {
+                "name": "n",
+                "kind": "name"
+              }
+            ],
+            "kind": "call"
+          },
+          "iter_kind": "range",
+          "body": [
+            {
+              "target": "total",
+              "value": {
+                "op": "+",
+                "left": {
+                  "name": "total",
+                  "kind": "name"
+                },
+                "right": {
+                  "name": "i",
+                  "kind": "name"
+                },
+                "kind": "binop"
+              },
+              "type": {
+                "id": "hole_0001",
+                "known_info": [],
+                "kind": "hole"
+              },
+              "mutable": true,
+              "target_kind": "reassign",
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "assign"
+            }
+          ],
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "for"
+        },
+        {
+          "value": {
+            "name": "total",
+            "kind": "name"
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "return"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 13,
+        "end_line": 17
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": null,
+      "kind": "function_def"
+    },
+    {
+      "node_id": "class_0005",
+      "name": "Counter",
+      "fields": [
+        {
+          "name": "value",
+          "type": {
+            "value": "i64",
+            "kind": "concrete"
+          }
+        },
+        {
+          "name": "history",
+          "type": {
+            "value": "Vec<i64>",
+            "kind": "concrete"
+          }
+        }
+      ],
+      "methods": [
+        {
+          "node_id": "fn_0003",
+          "name": "increment",
+          "params": [
+            {
+              "name": "amount",
+              "type": {
+                "value": "i64",
+                "kind": "concrete"
+              }
+            }
+          ],
+          "return_type": {
+            "value": "()",
+            "kind": "concrete"
+          },
+          "body": [
+            {
+              "target": "self.value",
+              "value": {
+                "op": "+",
+                "left": {
+                  "value": {
+                    "name": "self",
+                    "kind": "name"
+                  },
+                  "attr": "value",
+                  "kind": "attribute"
+                },
+                "right": {
+                  "name": "amount",
+                  "kind": "name"
+                },
+                "kind": "binop"
+              },
+              "type": {
+                "value": "i64",
+                "kind": "concrete"
+              },
+              "mutable": false,
+              "target_kind": "self_attr",
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "assign"
+            },
+            {
+              "target": "h",
+              "iter": {
+                "value": {
+                  "name": "self",
+                  "kind": "name"
+                },
+                "attr": "history",
+                "kind": "attribute"
+              },
+              "iter_kind": "sequence",
+              "body": [
+                {
+                  "value": {
+                    "func": {
+                      "name": "print",
+                      "kind": "name"
+                    },
+                    "args": [
+                      {
+                        "name": "h",
+                        "kind": "name"
+                      }
+                    ],
+                    "kind": "call"
+                  },
+                  "comments": {
+                    "leading": [],
+                    "trailing": []
+                  },
+                  "kind": "expr_stmt"
+                }
+              ],
+              "comments": {
+                "leading": [
+                  {
+                    "text": "# keep a record of every value we've held",
+                    "confidence": 1.0
+                  },
+                  {
+                    "text": "AMBIGUOUS[iteration-style]: Iterating by shared reference is the safe default; switch to into_iter() if the loop body needs to own each element.",
+                    "confidence": 1.0
+                  }
+                ],
+                "trailing": []
+              },
+              "kind": "for"
+            }
+          ],
+          "source_span": {
+            "file": "sample.py",
+            "start_line": 27,
+            "end_line": 31
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "ambiguity": null,
+          "kind": "function_def"
+        },
+        {
+          "node_id": "fn_0004",
+          "name": "report",
+          "params": [],
+          "return_type": {
+            "value": "i64",
+            "kind": "concrete"
+          },
+          "body": [
+            {
+              "test": {
+                "op": ">",
+                "left": {
+                  "value": {
+                    "name": "self",
+                    "kind": "name"
+                  },
+                  "attr": "value",
+                  "kind": "attribute"
+                },
+                "right": {
+                  "value": 100,
+                  "py_type": "int",
+                  "kind": "constant"
+                },
+                "kind": "compare"
+              },
+              "body": [
+                {
+                  "message": {
+                    "func": {
+                      "name": "ValueError",
+                      "kind": "name"
+                    },
+                    "args": [
+                      {
+                        "value": "counter overflowed",
+                        "py_type": "str",
+                        "kind": "constant"
+                      }
+                    ],
+                    "kind": "call"
+                  },
+                  "comments": {
+                    "leading": [
+                      {
+                        "text": "AMBIGUOUS[error-handling]: Python 'raise ...' was translated as a panic; consider a Result-based rewrite for recoverable errors.",
+                        "confidence": 1.0
+                      }
+                    ],
+                    "trailing": []
+                  },
+                  "kind": "raise"
+                }
+              ],
+              "orelse": [],
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "if"
+            },
+            {
+              "value": {
+                "value": {
+                  "name": "self",
+                  "kind": "name"
+                },
+                "attr": "value",
+                "kind": "attribute"
+              },
+              "comments": {
+                "leading": [],
+                "trailing": []
+              },
+              "kind": "return"
+            }
+          ],
+          "source_span": {
+            "file": "sample.py",
+            "start_line": 33,
+            "end_line": 36
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "ambiguity": null,
+          "kind": "function_def"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 20,
+        "end_line": 36
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": {
+        "category": "class-shape",
+        "chosen": "struct + impl",
+        "alternatives": [
+          "a trait + trait object (dyn Trait), if used polymorphically"
+        ],
+        "rationale": "'Counter' was translated as a plain struct; reconsider a trait object if it's used polymorphically elsewhere in the project."
+      },
+      "unsupported_bases": [],
+      "kind": "class_def"
+    },
+    {
+      "node_id": "fn_0006",
+      "name": "fetch_data",
+      "params": [
+        {
+          "name": "url",
+          "type": {
+            "id": "hole_0002",
+            "known_info": [
+              "no type hint; not yet inferred from call sites"
+            ],
+            "kind": "hole"
+          }
+        }
+      ],
+      "return_type": {
+        "id": "hole_0003",
+        "known_info": [
+          "returns 'response', type not resolved"
+        ],
+        "kind": "hole"
+      },
+      "body": [
+        {
+          "target": "response",
+          "value": {
+            "func": {
+              "value": {
+                "name": "requests",
+                "kind": "name"
+              },
+              "attr": "get",
+              "kind": "attribute"
+            },
+            "args": [
+              {
+                "name": "url",
+                "kind": "name"
+              }
+            ],
+            "kind": "call"
+          },
+          "type": {
+            "id": "hole_0004",
+            "known_info": [],
+            "kind": "hole"
+          },
+          "mutable": false,
+          "target_kind": "name",
+          "comments": {
+            "leading": [
+              {
+                "text": "SUGGESTED CRATE: consider `reqwest` (blocking client) (add `reqwest = { version = \"*\", features = [\"blocking\"] }`)",
+                "confidence": 1.0
+              }
+            ],
+            "trailing": []
+          },
+          "kind": "assign"
+        },
+        {
+          "value": {
+            "name": "response",
+            "kind": "name"
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "return"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 39,
+        "end_line": 41
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": null,
+      "kind": "function_def"
+    }
+  ]
+}

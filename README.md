@@ -56,20 +56,26 @@ line of Python gets translated is not.
 ## Project layout
 
 ```
-src/py2rust/
-    preflight/       stage 0: syntax, scope, out-of-scope-construct scan
+src/
+    __init__.py       package version
+    cli.py            the `py2rust` command-line interface
+    pipeline.py       wires every stage together
+    preflight/        stage 0: syntax, scope, out-of-scope-construct scan
     ir/               the IR schema, CST -> IR builder, and (de)serialization
     typing_inference/ literal- and hint-based type inference, type holes
     ambiguity/        ambiguity markers (collection types, class shape, ...)
     codegen/          IR -> Rust text rendering
     plugins/          the subprocess plugin protocol + built-in plugins
     report/           run summary, ambiguities.md, the split-length check
-    pipeline.py       wires every stage together
-    cli.py            the `py2rust` command-line interface
 docs/                 Sphinx documentation (see below)
 tests/                pytest test suite
 examples/             a sample Python file to try the tool on
 ```
+
+Every module above is a flat top-level import (`from ir import builder`,
+`from codegen import rust_writer`, and so on) -- there is no `py2rust`
+subpackage wrapping them. `pyproject.toml` maps `src/` as the package
+root so this flat layout is also what gets installed.
 
 ## Building the docs
 
@@ -93,9 +99,9 @@ implement yet:
 
 - Multi-file projects and the `_imports/` IR directory layout for
   converted dependencies (this prototype handles one file at a time).
-- The docstring-to-rustdoc plugin (`py2rust/plugins/docs_conversion.py` is
+- The docstring-to-rustdoc plugin (`plugins/docs_conversion.py` is
   a documented stub explaining what's needed).
 - A daemon-mode plugin protocol (today's subprocess-per-call model in
-  `py2rust/plugins/protocol.py` is deliberately the simple starting point).
+  `plugins/protocol.py` is deliberately the simple starting point).
 - IR schema versioning/upgrade passes for a v2 that adds decorators,
   generators, or `async`.

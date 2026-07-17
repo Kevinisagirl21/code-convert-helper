@@ -1,5 +1,5 @@
 Ambiguity marking
 ===================
 
-.. automodule:: py2rust.ambiguity.resolver
+.. automodule:: ambiguity.resolver
    :members:

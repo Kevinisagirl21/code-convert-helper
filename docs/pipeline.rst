@@ -1,5 +1,5 @@
 Pipeline orchestration
 =======================
 
-.. automodule:: py2rust.pipeline
+.. automodule:: pipeline
    :members:
