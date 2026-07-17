@@ -1,5 +1,5 @@
 # Handoff notes -- current status
-
+## update this when things change
 This captures exactly where the `pyrite` prototype stands, for continuity
 when this moves into a Claude Project. Read this alongside
 `PROJECT_OVERVIEW.md`, `ARCHITECTURE.md`, and `PLUGIN_API.md` (the design
