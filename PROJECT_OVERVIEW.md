@@ -1,6 +1,6 @@
 # Project overview — Python → Rust conversion assistant
 
-*(working name: "pyrite" — a placeholder; rename freely)*
+*(working name: "py2rust" — a placeholder; rename freely)*
 
 ## The problem
 

@@ -79,11 +79,11 @@ plugins.
 
 ## Python SDK (primary path)
 
-A small pip package (`pyrite-plugin-sdk`) handles the JSON framing so a
+A small pip package (`py2rust-plugin-sdk`) handles the JSON framing so a
 Python plugin author only writes the decision logic:
 
 ```python
-from pyrite_plugin_sdk import plugin, Suggestion
+from py2rust_plugin_sdk import plugin, Suggestion
 
 @plugin.hook("library_substitution")
 def suggest(context):
@@ -104,7 +104,7 @@ than crashing the run.
 
 There's no separate API for this — a Rust (or Go, or anything else)
 executable that reads the same JSON request from stdin and writes the same
-JSON response to stdout on exit is a fully valid plugin. A `pyrite-plugin`
+JSON response to stdout on exit is a fully valid plugin. A `py2rust-plugin`
 Rust crate providing equivalent ergonomics to the Python SDK (a trait +
 `main()` boilerplate) is worth publishing once the protocol stabilizes, but
 isn't required — the contract itself is the only requirement.

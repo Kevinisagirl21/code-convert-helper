@@ -1,13 +1,13 @@
 # Handoff notes -- current status
 ## update this when things change
-This captures exactly where the `pyrite` prototype stands, for continuity
+This captures exactly where the `py2rust` prototype stands, for continuity
 when this moves into a Claude Project. Read this alongside
 `PROJECT_OVERVIEW.md`, `ARCHITECTURE.md`, and `PLUGIN_API.md` (the design
 docs) and `CODEBASE_SOURCE.md` (a full dump of the current source tree).
 
 ## What's built and passing (49 tests)
 
-The full pipeline works end to end via the `pyrite` CLI:
+The full pipeline works end to end via the `py2rust` CLI:
 
 - `preflight/checks.py` -- syntax, best-effort undefined-name scan,
   out-of-scope-construct detection
@@ -25,7 +25,7 @@ The full pipeline works end to end via the `pyrite` CLI:
   for docstring conversion (`plugins/docs_conversion.py`)
 - `report/summary.py`, `report/split_check.py` -- the ambiguities.md
   report and the optional output-length split suggestion
-- `cli.py` -- `pyrite preflight`, `pyrite convert`, `pyrite inspect-ir`
+- `cli.py` -- `py2rust preflight`, `py2rust convert`, `py2rust inspect-ir`
 
 ## Where the current session left off
 
