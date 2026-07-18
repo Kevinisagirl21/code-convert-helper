@@ -110,9 +110,13 @@ def inspect_ir(ir_file: Path = typer.Argument(..., exists=True, help="A .pyrir.j
 def version() -> None:
     """Print the py2rust version."""
 
-    from src import __version__
+    import importlib.metadata
 
-    console.print(f"py2rust {__version__}")
+    try:
+        ver = importlib.metadata.version("py2rust")
+    except importlib.metadata.PackageNotFoundError:
+        ver = "0.1.0"
+    console.print(f"py2rust {ver}")
 
 
 if __name__ == "__main__":

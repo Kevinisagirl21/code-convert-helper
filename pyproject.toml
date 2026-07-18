@@ -24,10 +24,11 @@ dev = [
 ]
 
 [project.scripts]
-py2rust = "py2rust.cli:app"
+py2rust = "cli:app"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
