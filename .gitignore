@@ -1,3 +1,7 @@
+# py2rust's own generated conversion output (.rs, IR json, ambiguities.md)
+# -- these are build artifacts of running the tool, not source.
+/output/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
