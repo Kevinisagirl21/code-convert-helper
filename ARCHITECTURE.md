@@ -144,10 +144,6 @@ for, say, decorators, it doesn't edit the v1 IR file directly. It:
 3. Writes a new IR file under a new schema version (e.g. `v2_decorators`),
    locked in turn.
 
-This is the mechanism behind "store the outputs so later revisions can run
-in addition to v1" — each revision is additive and versioned, never a
-silent in-place mutation of a prior locked file.
-
 **File layout.** IR is one file per source file — including files that
 belong to imported local modules or libraries, not just the entry file.
 The directory structure mirrors the project:
