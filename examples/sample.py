@@ -11,9 +11,9 @@ def clamp(value: int, lo: int, hi: int) -> int:
 
 
 def sum_up_to(n: int) -> int:
-    total = 0
+    total: int = 0
     for i in range(n):
-        total = total + i
+        total: int = total + i
     return total
 
 
@@ -24,18 +24,18 @@ class Counter:
         self.value = start
         self.history = [start]
 
-    def increment(self, amount: int):
+    def increment(self, amount: int) -> None:
         self.value = self.value + amount
         # keep a record of every value we've held
         for h in self.history:
             print(h)
 
-    def report(self):
+    def report(self) -> int:
         if self.value > 100:
             raise ValueError("counter overflowed")
         return self.value
 
 
-def fetch_data(url):
-    response = requests.get(url)
+def fetch_data(url: str) -> str:
+    response: str = requests.get(url)
     return response

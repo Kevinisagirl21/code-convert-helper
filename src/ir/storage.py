@@ -93,9 +93,15 @@ def _reconstruct_stmt(data: dict[str, Any]) -> Any:
 
 
 def _reconstruct_type_slot(data: dict[str, Any]) -> schema.TypeSlot:
-    if data["kind"] == "concrete":
-        return schema.ConcreteType(value=data["value"])
-    return schema.TypeHole(id=data["id"], known_info=list(data.get("known_info", [])))
+    # v2: TypeSlot is always a ConcreteType now (no more TypeHole) -- see
+    # ir.schema's Milestone 1 notes. A "hole"-kind entry can only appear
+    # in an old v1_core IR file, which isn't a supported input for v2.
+    if data["kind"] != "concrete":
+        raise ValueError(
+            f"unsupported type-slot kind {data['kind']!r} -- looks like a v1_core IR "
+            "file (type holes), which v2 (schema_version=v2_ownership) can't load"
+        )
+    return schema.ConcreteType(value=data["value"])
 
 
 def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
@@ -129,7 +135,11 @@ def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
             kwargs[key] = schema.Ambiguity(**value)
         elif key == "params" and isinstance(value, list):
             kwargs[key] = [
-                schema.Param(name=p["name"], type=_reconstruct_type_slot(p["type"]))
+                schema.Param(
+                    name=p["name"],
+                    type=_reconstruct_type_slot(p["type"]),
+                    ownership=p.get("ownership"),
+                )
                 for p in value
             ]
         elif key == "fields" and isinstance(value, list) and cls is schema.ClassDefNode:

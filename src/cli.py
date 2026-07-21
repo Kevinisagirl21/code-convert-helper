@@ -15,6 +15,7 @@ from rich.console import Console
 from rich.table import Table
 
 import pipeline
+from config import PipelineConfig
 from ir import storage
 from preflight import checks
 from report.split_check import SplitCheckConfig
@@ -31,6 +32,9 @@ console = Console()
 def preflight(file: Path = typer.Argument(..., exists=True, help="Python file to check.")) -> None:
     """Run stage-0 preflight checks only, and print the report."""
 
+    from logging_setup import configure_logging
+
+    configure_logging(output_dir=None)
     source = file.read_text(encoding="utf-8")
     report = checks.run_preflight(source)
 
@@ -63,13 +67,17 @@ def convert(
     ),
     split_ratio: float = typer.Option(1.5, help="Split-check ratio threshold (output/input lines)."),
     split_lines: int = typer.Option(500, help="Split-check absolute line-count threshold."),
+    strict: bool = typer.Option(
+        False, "--strict/--no-strict", help="Treat warnings as fatal errors (default off)."
+    ),
 ) -> None:
     """Convert FILE to Rust, writing output, IR, and an ambiguity report."""
 
     split_config = SplitCheckConfig(
         ratio_threshold=split_ratio, absolute_line_threshold=split_lines, enabled=split_check
     )
-    result = pipeline.convert_file(file, out, emit_ir=emit_ir, split_config=split_config)
+    config = PipelineConfig(warnings_as_fatal=strict)
+    result = pipeline.convert_file(file, out, emit_ir=emit_ir, split_config=split_config, config=config)
 
     if not result.preflight.passed:
         console.print(f"[bold red]Preflight failed for {file}:[/bold red]")
@@ -84,10 +92,10 @@ def convert(
         s = result.run_summary
         console.print(
             f"  functions: {s.functions_converted}  classes: {s.classes_converted}  "
-            f"type holes: {len(s.type_holes)}  ambiguities: {len(s.ambiguities)}  "
-            f"unsupported: {len(s.unsupported)}"
+            f"ambiguities: {len(s.ambiguities)}  unsupported: {len(s.unsupported)}"
         )
         console.print(f"  full report: {out / 'ambiguities.md'}")
+        console.print(f"  run log: {out / 'py2rust.log'}")
 
     if result.split_result is not None and result.split_result.triggered:
         console.print(f"  [yellow]split suggestion:[/yellow] {result.split_result.reason}")

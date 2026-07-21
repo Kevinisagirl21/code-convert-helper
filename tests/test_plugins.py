@@ -17,7 +17,7 @@ def test_unknown_call_has_no_suggestion():
 
 
 def test_annotate_crate_suggestions_marks_but_does_not_rewrite():
-    src = "import requests\n\ndef f(url):\n    response = requests.get(url)\n    return response\n"
+    src = "import requests\n\ndef f(url: str) -> str:\n    response: str = requests.get(url)\n    return response\n"
     module = builder.build_module_ir(src, "t.py")
     crate_substitution.annotate_crate_suggestions(module)
     fn = [n for n in module.body if n.kind == "function_def"][0]

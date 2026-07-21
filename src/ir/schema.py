@@ -2,22 +2,37 @@
 
 This module defines the versioned, serializable data structures that make
 up py2rust's intermediate representation. The IR sits between the Python
-front end (:mod:`py2rust.ir.builder`) and the Rust back end
-(:mod:`py2rust.codegen.rust_writer`): it is the artifact that gets written
+front end (:mod:`ir.builder`) and the Rust back end
+(:mod:`codegen.rust_writer`): it is the artifact that gets written
 to disk, locked read-only, and inspected for debugging.
 
-Design notes
-------------
+v2 schema changes (Milestone 1)
+--------------------------------
+* Type hints are now mandatory everywhere preflight requires them (see
+  :mod:`preflight.checks`), so there is no more base-type inference and
+  no more ``TypeHole``. A type slot is always a resolved
+  :class:`ConcreteType`. ``TypeSlot`` is kept as a name (rather than
+  deleted outright) purely so downstream modules that spell out
+  ``schema.TypeSlot`` in an annotation don't all need touching in the
+  same commit; it is simply an alias for ``ConcreteType`` now.
+* The "don't guess silently, show your work" idea that ``TypeHole``
+  embodied for *types* in v1 is being repurposed for *ownership* in v2
+  (see the ROADMAP's Milestone 2). For Milestone 1 this is intentionally
+  a bare placeholder -- ``ownership: str | None`` -- with no
+  evidence-carrying structure yet. The real ``own``/``ref``/``refmut``/
+  ``move`` resolver and its evidence trail land in Milestone 2; wiring a
+  richer shape now would mean guessing at a design before the code that
+  actually populates it exists.
+
+Design notes (unchanged from v1)
+---------------------------------
 * Every node kind is a plain :func:`dataclasses.dataclass` with no
   inheritance between node kinds. This keeps serialization simple
   (:func:`dataclasses.asdict` handles any nested dataclass regardless of
   static type) and keeps each class easy to read in isolation.
 * A ``kind`` field on every node acts as a tag so a dict loaded back from
   JSON can be dispatched to the right dataclass constructor
-  (see :mod:`py2rust.ir.storage`).
-* Type information is never a bare guess. A type slot is either a
-  :class:`ConcreteType` (resolved) or a :class:`TypeHole` (explicitly
-  unresolved, carrying whatever partial evidence inference collected).
+  (see :mod:`ir.storage`).
 """
 
 from __future__ import annotations
@@ -25,10 +40,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Union
 
-#: Schema version for this IR shape. A future revision that adds support
-#: for e.g. decorators or generators bumps this and writes IR under a new
-#: version rather than mutating files written under this one.
-SCHEMA_VERSION = "v1_core"
+#: Schema version for this IR shape. v2 drops type-hole/inference support
+#: and adds the (currently placeholder) ownership field, so it gets its
+#: own version rather than silently reusing "v1_core" for a different
+#: shape -- see ARCHITECTURE.md's "how it unlocks for later revisions".
+SCHEMA_VERSION = "v2_ownership"
 
 
 @dataclass
@@ -42,35 +58,23 @@ class SourceSpan:
 
 @dataclass
 class ConcreteType:
-    """A fully resolved type, e.g. produced from a type hint or inference."""
+    """A fully resolved type, always produced from an explicit type hint.
+
+    v2 requires a hint everywhere preflight checks for one (see
+    :mod:`preflight.checks`), so this is never a guess -- there is no
+    inference fallback and no unresolved-hole state anymore.
+    """
 
     value: str
     kind: str = "concrete"
 
 
-@dataclass
-class TypeHole:
-    """An explicitly unresolved type slot.
-
-    Attributes
-    ----------
-    id:
-        Stable identifier so the same hole can be referenced from more
-        than one place (e.g. a parameter and a later usage).
-    known_info:
-        Human-readable fragments of evidence gathered during inference,
-        e.g. ``"compared with '>' against param 'value' (int)"``. These
-        are carried all the way to codegen and rendered as a reference
-        comment above the hole, instead of being discarded.
-    """
-
-    id: str
-    known_info: list[str] = field(default_factory=list)
-    kind: str = "hole"
-
-
-#: A type slot is always one or the other -- never a silent default.
-TypeSlot = Union[ConcreteType, TypeHole]
+#: v1 had a union here (``ConcreteType | TypeHole``) because a type could
+#: be legitimately unresolved. v2 has no holes, so every type slot is a
+#: ConcreteType. Kept as a separate name rather than replacing every
+#: ``schema.TypeSlot`` annotation with ``schema.ConcreteType`` in one
+#: sweep across the codebase.
+TypeSlot = ConcreteType
 
 
 @dataclass
@@ -117,10 +121,17 @@ class Ambiguity:
 
 @dataclass
 class Param:
-    """A function or method parameter."""
+    """A function or method parameter.
+
+    ``ownership`` is a Milestone 1 placeholder for the ``#!`` ownership
+    directive model landing in Milestone 2 (``"own" | "ref" | "refmut" |
+    "move"``, or ``None`` if not yet resolved). It carries no evidence
+    structure yet -- that's the resolver's job, not the schema's.
+    """
 
     name: str
     type: TypeSlot
+    ownership: "str | None" = None
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +282,9 @@ class AssignStmt:
     mutable: bool = False
     target_kind: str = "name"  # "name" | "self_attr" | "reassign"
     comments: Comments = field(default_factory=Comments)
+    #: Milestone 1 placeholder -- see :class:`Param`. Assignments are
+    #: where the ownership directive model (Milestone 2) also applies.
+    ownership: "str | None" = None
     kind: str = "assign"
 
 
@@ -390,6 +404,10 @@ class FunctionDefNode:
     source_span: SourceSpan
     comments: Comments = field(default_factory=Comments)
     ambiguity: "Ambiguity | None" = None
+    #: Milestone 1 placeholder -- see :class:`Param`. Applies to the
+    #: return type's ownership (e.g. does the function return an owned
+    #: value or a reference).
+    return_ownership: "str | None" = None
     kind: str = "function_def"
 
 

@@ -17,8 +17,10 @@ from pathlib import Path
 
 from ambiguity import resolver as ambiguity  # noqa: F401  (re-exported for callers)
 from codegen import rust_writer
+from config import PipelineConfig
 from ir import builder, storage
 from ir.schema import ModuleNode
+from logging_setup import configure_logging, get_logger
 from plugins import crate_substitution
 from preflight import checks
 from report import split_check, summary
@@ -38,6 +40,7 @@ def convert_source(
     source_file: str,
     *,
     split_config: split_check.SplitCheckConfig | None = None,
+    config: PipelineConfig | None = None,
 ) -> ConversionResult:
     """Run the full pipeline over Python ``source`` already in memory.
 
@@ -46,8 +49,12 @@ def convert_source(
     pipeline itself stays trivially unit-testable with plain strings.
     """
 
+    config = config or PipelineConfig()
+    logger = get_logger()
+
     report = checks.run_preflight(source)
     if not report.passed:
+        logger.error("preflight failed for %s -- stopping before IR is built", source_file)
         return ConversionResult(report, None, None, None, None)
 
     module = builder.build_module_ir(source, source_file)
@@ -72,6 +79,7 @@ def convert_file(
     *,
     emit_ir: bool = True,
     split_config: split_check.SplitCheckConfig | None = None,
+    config: PipelineConfig | None = None,
 ) -> ConversionResult:
     """Run the full pipeline against a file on disk and write all outputs.
 
@@ -80,10 +88,14 @@ def convert_file(
     * ``<stem>.rs`` -- the generated Rust.
     * ``ir/<stem>.pyrir.json`` -- the locked IR artifact (if ``emit_ir``).
     * ``ambiguities.md`` -- the run's flagged-item report.
+    * ``py2rust.log`` -- this run's log (see :mod:`logging_setup`).
     """
 
+    config = config or PipelineConfig()
+    configure_logging(output_dir)
+
     source = input_path.read_text(encoding="utf-8")
-    result = convert_source(source, input_path.name, split_config=split_config)
+    result = convert_source(source, input_path.name, split_config=split_config, config=config)
 
     if not result.preflight.passed:
         return result

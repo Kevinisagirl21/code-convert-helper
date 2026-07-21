@@ -1,5 +1,5 @@
 {
-  "schema_version": "v1_core",
+  "schema_version": "v2_ownership",
   "source_file": "sample.py",
   "body": [
     {
@@ -21,21 +21,24 @@
           "type": {
             "value": "i64",
             "kind": "concrete"
-          }
+          },
+          "ownership": null
         },
         {
           "name": "lo",
           "type": {
             "value": "i64",
             "kind": "concrete"
-          }
+          },
+          "ownership": null
         },
         {
           "name": "hi",
           "type": {
             "value": "i64",
             "kind": "concrete"
-          }
+          },
+          "ownership": null
         }
       ],
       "return_type": {
@@ -136,6 +139,7 @@
         "trailing": []
       },
       "ambiguity": null,
+      "return_ownership": null,
       "kind": "function_def"
     },
     {
@@ -147,7 +151,8 @@
           "type": {
             "value": "i64",
             "kind": "concrete"
-          }
+          },
+          "ownership": null
         }
       ],
       "return_type": {
@@ -172,6 +177,7 @@
             "leading": [],
             "trailing": []
           },
+          "ownership": null,
           "kind": "assign"
         },
         {
@@ -206,9 +212,8 @@
                 "kind": "binop"
               },
               "type": {
-                "id": "hole_0001",
-                "known_info": [],
-                "kind": "hole"
+                "value": "i64",
+                "kind": "concrete"
               },
               "mutable": true,
               "target_kind": "reassign",
@@ -216,6 +221,7 @@
                 "leading": [],
                 "trailing": []
               },
+              "ownership": null,
               "kind": "assign"
             }
           ],
@@ -247,6 +253,7 @@
         "trailing": []
       },
       "ambiguity": null,
+      "return_ownership": null,
       "kind": "function_def"
     },
     {
@@ -278,7 +285,8 @@
               "type": {
                 "value": "i64",
                 "kind": "concrete"
-              }
+              },
+              "ownership": null
             }
           ],
           "return_type": {
@@ -314,6 +322,7 @@
                 "leading": [],
                 "trailing": []
               },
+              "ownership": null,
               "kind": "assign"
             },
             {
@@ -375,6 +384,7 @@
             "trailing": []
           },
           "ambiguity": null,
+          "return_ownership": null,
           "kind": "function_def"
         },
         {
@@ -465,6 +475,7 @@
             "trailing": []
           },
           "ambiguity": null,
+          "return_ownership": null,
           "kind": "function_def"
         }
       ],
@@ -495,20 +506,15 @@
         {
           "name": "url",
           "type": {
-            "id": "hole_0002",
-            "known_info": [
-              "no type hint; not yet inferred from call sites"
-            ],
-            "kind": "hole"
-          }
+            "value": "String",
+            "kind": "concrete"
+          },
+          "ownership": null
         }
       ],
       "return_type": {
-        "id": "hole_0003",
-        "known_info": [
-          "returns 'response', type not resolved"
-        ],
-        "kind": "hole"
+        "value": "String",
+        "kind": "concrete"
       },
       "body": [
         {
@@ -531,9 +537,8 @@
             "kind": "call"
           },
           "type": {
-            "id": "hole_0004",
-            "known_info": [],
-            "kind": "hole"
+            "value": "String",
+            "kind": "concrete"
           },
           "mutable": false,
           "target_kind": "name",
@@ -546,6 +551,7 @@
             ],
             "trailing": []
           },
+          "ownership": null,
           "kind": "assign"
         },
         {
@@ -570,6 +576,7 @@
         "trailing": []
       },
       "ambiguity": null,
+      "return_ownership": null,
       "kind": "function_def"
     }
   ]
