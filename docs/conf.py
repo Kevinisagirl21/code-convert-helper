@@ -1,25 +1,17 @@
-"""Sphinx configuration for the py2rust documentation."""
+"""Sphinx configuration for the code-convert-helper documentation."""
 
 from __future__ import annotations
 
 import os
 import sys
 
-# Two separate path entries are needed here, not one:
-#   - "../src" lets autodoc import the tool's own modules the same flat
-#     way the tests and pipeline.py do (`import ir`, `import codegen`,
-#     `import cli`, ...) -- there is no `py2rust` wrapper package.
-#   - ".." (the repo root) lets *this file* import `src` as a package,
-#     purely to read `__version__` below -- `src/` only exists as a
-#     traversable package from one level up, not from inside itself.
-sys.path.insert(0, os.path.abspath(".."))
 sys.path.insert(0, os.path.abspath("../src"))
 
-project = "py2rust"
-copyright = "2026, py2rust contributors"
-author = "py2rust contributors"
+project = "code-convert-helper"
+copyright = "2026, code-convert-helper contributors"
+author = "code-convert-helper contributors"
 
-from src import __version__ as release  # noqa: E402
+release = "0.1.0"
 
 extensions = [
     "sphinx.ext.autodoc",

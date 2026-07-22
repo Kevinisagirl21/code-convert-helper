@@ -79,11 +79,11 @@ plugins.
 
 ## Python SDK (primary path)
 
-A small pip package (`py2rust-plugin-sdk`) handles the JSON framing so a
+A small pip package (`code-convert-helper-plugin-sdk`) handles the JSON framing so a
 Python plugin author only writes the decision logic:
 
 ```python
-from py2rust_plugin_sdk import plugin, Suggestion
+from code-convert-helper_plugin_sdk import plugin, Suggestion
 
 @plugin.hook("library_substitution")
 def suggest(context):
@@ -104,7 +104,7 @@ than crashing the run.
 
 There's no separate API for this — a Rust (or Go, or anything else)
 executable that reads the same JSON request from stdin and writes the same
-JSON response to stdout on exit is a fully valid plugin. A `py2rust-plugin`
+JSON response to stdout on exit is a fully valid plugin. A `code-convert-helper-plugin`
 Rust crate providing equivalent ergonomics to the Python SDK (a trait +
 `main()` boilerplate) is worth publishing once the protocol stabilizes, but
 isn't required — the contract itself is the only requirement.
@@ -132,3 +132,15 @@ comment block in stage 5 — including a `# Arguments` / `# Returns` /
 `# Errors` layout that mirrors what a hand-written Rust doc comment would
 look like, rather than a literal line-by-line translation of the
 docstring's original formatting.
+
+## Milestone 2 note: ownership is not a plugin hook
+
+The `#!` ownership directive system (`directives/parser.py`,
+`ownership/resolver.py`) is deliberately **core**, not a plugin hook,
+even though it's a new "judgment call" category like the ones above.
+Per `ROADMAP.md`: directive parsing and ownership resolution stay core
+and are never pluggable, since they govern language-level correctness
+(what compiles) rather than ecosystem taste (which crate to suggest).
+Only the *stdlib/crate substitution* side of Milestone 2 (porting the
+existing `crate_substitution` plugin, milestone 6) remains suggest-only
+and plugin-based.

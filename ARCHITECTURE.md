@@ -144,6 +144,10 @@ for, say, decorators, it doesn't edit the v1 IR file directly. It:
 3. Writes a new IR file under a new schema version (e.g. `v2_decorators`),
    locked in turn.
 
+This is the mechanism behind "store the outputs so later revisions can run
+in addition to v1" — each revision is additive and versioned, never a
+silent in-place mutation of a prior locked file.
+
 **File layout.** IR is one file per source file — including files that
 belong to imported local modules or libraries, not just the entry file.
 The directory structure mirrors the project:
@@ -169,6 +173,14 @@ Cross-file references (e.g. a function in `main.py` calling into `utils.py`)
 are IR-to-IR references by file + node ID, not string lookups against raw
 source, so stage 4 and 5 can resolve a cross-file call's type information
 without re-parsing anything.
+
+**Milestone 2 status.** Import recursion is implemented (`imports/resolver.py`,
+driven from `pipeline.convert_file`): both local, project-relative modules and
+installed third-party packages (found via `importlib`) are followed, up to a
+configurable depth (`--import-depth`, default 5), and each resolved module is
+converted independently and written under `ir/_imports/` as this section
+describes. Cross-file IR-to-IR references (rather than each imported module's
+IR standing alone) remain future work.
 
 ## Plugin system
 
@@ -218,6 +230,14 @@ ambiguity live, shows the choice and a short rationale, and applies the
 user's pick immediately for that run. This choice is never written to a
 persisted config — it's a session-scoped decision, not a rule.
 
+**Milestone 2 addition: ownership.** Alongside these existing ambiguity
+categories, a parameter/return type/assignment's *ownership* (`owner` /
+`refer` / `refer_mut` / `move`) is resolved the same way in spirit: an
+explicit `#!` directive always wins, and disagreement with what
+usage-based inference would have picked is recorded (never silently
+dropped) as a `conflict` on the `OwnershipDecision`. See
+`ownership/resolver.py` and `directives/parser.py`.
+
 ## Stage 5 — Generate Rust
 
 Walks the finalized IR and emits Rust text (not via an AST-to-AST library
@@ -255,9 +275,21 @@ land):
   let response = /* unconverted: requests.get(url) */;
   ```
 
+- A parameter, return type, or `let` binding's resolved ownership controls
+  whether it renders as `&T`, `&mut T`, or a plain owned `T`; an inferred
+  (no-directive) decision or a directive/inference conflict gets its own
+  marker comment, e.g.:
+
+  ```rust
+  // OWNERSHIP (inferred 'refer'): 'name' is only read or passed along; never stored or returned
+  fn greet(name: &String) -> &String { ... }
+  ```
+
 - A companion `ambiguities.md` report lists every marker (type holes,
   idiom choices, and plugin suggestions alike) with line number and
-  rationale, for easy scanning without grepping the whole file.
+  rationale, for easy scanning without grepping the whole file. A separate
+  `ownership_log.{json,md}` does the same specifically for every ownership
+  decision made during the run.
 
 ## Stage 6 — Verify & report
 
@@ -276,40 +308,30 @@ land):
   it. This is about file organization, not translation correctness, so it
   lives in ordinary tool config rather than being a fixed rule.
 
-## Implementation stack (what v1 actually uses)
+## Suggested implementation stack
 
-The prototype is implemented in Python, not Rust, so its own tooling
-choices are:
+Given the primary output is Rust, building the tool itself in Rust is a
+natural fit (and doubles as a proof that the approach works):
 
-- **Front-end parsing:** `libcst`, which — unlike Python's built-in `ast`
-  module — keeps every comment attached to the CST node it belongs to
-  natively. That's why stage 1 doesn't need a separate `tokenize` pass
-  merged back in later: `ir/builder.py` reads leading/trailing comments
-  directly off each `libcst` node as it builds the IR.
-- **IR data structures:** plain `dataclasses` (`ir/schema.py`), serialized
-  with `dataclasses.asdict` + the standard `json` module
-  (`ir/storage.py`), rather than a schema/codegen library like `serde`.
-  Reconstruction from JSON back into typed dataclasses is done by hand via
-  a small `kind`-tag registry, since Python has no built-in equivalent of
-  `serde`'s derive macros.
-- **Rust codegen:** a hand-rolled string-building pretty-printer
-  (`codegen/rust_writer.py`), deliberately not built on an AST-to-AST
-  Rust-generation library — same rationale as the stage-5 notes above,
-  just implemented directly in Python string templates instead of a
-  templating crate.
-- **CLI:** `typer` (type-hint-driven command definitions) with `rich` for
-  formatted terminal output (tables, colored status).
-- **Parse-check on output:** not yet wired up (see `HANDOFF.md`); the
-  `syn`-based validation step described in Stage 6 above is aspirational
-  for this prototype rather than implemented.
+- **Front-end parsing:** `rustpython-parser` crate — gives a full Python
+  AST without shelling out to a Python interpreter.
+- **Comment extraction:** Python's tokenizer behavior can be replicated
+  from the same crate's lexer, or by running a small embedded tokenizer
+  pass matched to it.
+- **IR serialization:** plain `serde` + JSON (or RON, if human-editability
+  during debugging matters more than tooling ubiquity — worth prototyping
+  both).
+- **Rust codegen:** hand-written templating rather than `syn`/`quote`
+  (which normalize away comments and exact formatting) — codegen needs to
+  own comment placement precisely.
+- **Parse-check on output:** `syn` in parse-only mode, used purely as a
+  validator, not a generator.
 
-An earlier draft of this document recommended implementing the tool
-itself in Rust instead. That plan was set aside for this prototype in
-favor of Python's faster iteration while the IR schema was still
-changing, and `libcst`'s built-in comment preservation avoiding the need
-to build a custom token-association pass from scratch. The original
-Rust-oriented plan is kept outside this repository rather than deleted;
-ask whoever holds `GOAL.md` if you want to revisit it.
+This is a recommendation, not a constraint — happy to reconsider if there's
+a reason to prefer implementing the tool in Python instead (e.g. faster
+iteration while the IR schema is still in flux). (In practice, this
+prototype's implementation to date has been in Python, for faster
+iteration while the schema was still in flux — see `HANDOFF.md`.)
 
 ## Open questions for the next round
 
@@ -325,3 +347,7 @@ ask whoever holds `GOAL.md` if you want to revisit it.
   and versioned with the tool, or fetched/updateable separately?
 - Docs-conversion plugin scope for v1 — Sphinx only, or Sphinx plus
   Google/NumPy docstring styles from the start?
+- Now that import recursion is implemented, cross-file IR-to-IR references
+  (a call in the entry file resolving a converted import's function type
+  directly, rather than each imported module's IR standing alone) are the
+  natural next step.

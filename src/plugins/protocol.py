@@ -7,7 +7,7 @@ a crash, a timeout, or malformed JSON just means "no suggestion" for that
 call, and the overall conversion continues unaffected.
 
 Python is the primary plugin-authoring path (see
-:mod:`py2rust.plugins.python_sdk`), but this protocol module itself has no
+:mod:`plugins.python_sdk`), but this protocol module itself has no
 opinion about what language wrote the plugin -- a compiled executable
 implementing the same stdin/stdout contract is just as valid.
 """
@@ -62,17 +62,17 @@ def run_external_plugin(
             timeout=timeout,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
-        print(f"[py2rust] plugin '{executable}' failed to run: {exc}")
+        print(f"[code-convert-helper] plugin '{executable}' failed to run: {exc}")
         return None
 
     if result.returncode != 0:
-        print(f"[py2rust] plugin '{executable}' exited with code {result.returncode}; skipping")
+        print(f"[code-convert-helper] plugin '{executable}' exited with code {result.returncode}; skipping")
         return None
 
     try:
         payload = json.loads(result.stdout)
     except json.JSONDecodeError:
-        print(f"[py2rust] plugin '{executable}' returned malformed JSON; skipping")
+        print(f"[code-convert-helper] plugin '{executable}' returned malformed JSON; skipping")
         return None
 
     suggestion = payload.get("suggestion")
@@ -81,5 +81,5 @@ def run_external_plugin(
     try:
         return PluginSuggestion(**suggestion)
     except TypeError:
-        print(f"[py2rust] plugin '{executable}' returned an unrecognized suggestion shape; skipping")
+        print(f"[code-convert-helper] plugin '{executable}' returned an unrecognized suggestion shape; skipping")
         return None

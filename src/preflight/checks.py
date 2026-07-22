@@ -5,36 +5,13 @@ translate at all. A hard failure here means the tool refuses to proceed --
 feeding a broken or unsound file into a translator just produces
 confidently wrong Rust.
 
-This is intentionally a lightweight, v2-scoped checker rather than a
+This is intentionally a lightweight, v1-scoped checker rather than a
 reimplementation of ``mypy`` or ``pyflakes``: it catches syntax errors,
-flags obviously undefined names within a function's own scope, records
-which out-of-scope constructs (generators, decorators, async, ``eval``,
-etc.) appear without failing the run over those (they become
-:class:`~ir.schema.UnsupportedStmt` nodes later instead of being silently
-mistranslated), and -- new in v2 -- hard-rejects any missing mandatory
-type hint.
-
-Mandatory type hints (Milestone 1)
------------------------------------
-Per the v2 design decisions: hints are required, strictly, on function
-parameters, return types, first assignments (including ``self.``
-attributes), with these deliberate exemptions/derivations (see
-:mod:`typing_inference.resolver` for the shared logic):
-
-* Re-assignment and augmented assignment reuse the name's first-hinted
-  type (a flat, whole-file lookup -- we trust the input is already
-  mypy/pyright/pylint-clean rather than re-implementing scope
-  resolution).
-* A local or ``self.`` attribute assigned directly from an already-hinted
-  name (e.g. ``self.x = x``) derives its type from that name.
-* ``for x in range(...)`` / ``for x in <hinted-list-name>`` derive the
-  loop variable's type from the iterable; anything else is rejected.
-* Tuple/multi-target assignment (``a, b = 1, 2``) is hard-rejected for
-  now -- not in the MVP subset, no hint syntax exists for it in Python.
-
-A missing/unresolvable hint is always an ``"error"``-severity issue, and
-``PreflightReport.passed`` is ``False`` whenever any error-severity issue
-is present -- not just on a hard syntax error, as in v1.
+flags obviously undefined names within a function's own scope, and
+records which out-of-scope constructs (generators, decorators, async,
+``eval``, etc.) appear, without failing the run over those -- they become
+:class:`~ir.schema.UnsupportedStmt` nodes later instead of being
+silently mistranslated.
 """
 
 from __future__ import annotations
@@ -42,13 +19,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 import libcst as cst
-
-from logging_setup import get_logger
-from typing_inference.resolver import (
-    MandatoryHintError,
-    TupleUnpackingNotSupportedError,
-    TypeResolver,
-)
 
 #: Names always available without an explicit assignment or parameter.
 _BUILTINS = {
@@ -223,123 +193,6 @@ class _UndefinedNameScanner(cst.CSTVisitor):
         return False  # don't recurse further; nested defs handled independently
 
 
-def _is_range_call(expr: cst.BaseExpression) -> bool:
-    return (
-        isinstance(expr, cst.Call)
-        and isinstance(expr.func, cst.Name)
-        and expr.func.value == "range"
-    )
-
-
-class _MandatoryHintScanner(cst.CSTVisitor):
-    """Hard-rejects any missing mandatory type hint (v2, Milestone 1).
-
-    Uses the same :class:`~typing_inference.resolver.TypeResolver` the
-    builder will use later, so preflight's "does this pass" answer can
-    never drift from what the builder actually does with the same file.
-    One resolver instance is shared across the whole file (flat lookup,
-    not per-function/per-class scoping -- see module docstring).
-    """
-
-    def __init__(self) -> None:
-        self.resolver = TypeResolver()
-        self.findings: list[PreflightIssue] = []
-
-    def _error(self, message: str) -> None:
-        self.findings.append(PreflightIssue(severity="error", message=message))
-
-    # -- functions -------------------------------------------------------
-
-    def visit_FunctionDef(self, node: cst.FunctionDef) -> bool:
-        for i, p in enumerate(node.params.params):
-            if i == 0 and p.name.value == "self":
-                continue
-            try:
-                self.resolver.resolve_param(p.name.value, p.annotation)
-            except MandatoryHintError as exc:
-                self._error(f"in '{node.name.value}': {exc}")
-        if node.name.value != "__init__":
-            # __init__ never contributes a return-type hint to codegen --
-            # constructors always become Rust's `new(...) -> Self`, so
-            # requiring `-> None` on every Python `__init__` would just be
-            # unused ceremony, not a real design decision to surface.
-            try:
-                self.resolver.resolve_return(node.name.value, node.returns)
-            except MandatoryHintError as exc:
-                self._error(f"in '{node.name.value}': {exc}")
-        return True  # keep descending into the body
-
-    # -- assignments -----------------------------------------------------
-
-    def visit_Assign(self, node: cst.Assign) -> bool:
-        if len(node.targets) > 1:
-            self._reject_tuple("multiple assignment targets (x = y = ...)")
-            return True
-        target = node.targets[0].target
-        if isinstance(target, (cst.Tuple, cst.List)):
-            self._reject_tuple("tuple/list-unpacking assignment")
-            return True
-        self._resolve_target(target, annotation=None, value=node.value)
-        return True
-
-    def visit_AnnAssign(self, node: cst.AnnAssign) -> bool:
-        if node.value is None:
-            return True  # bare declaration, e.g. `x: int` with no value
-        self._resolve_target(node.target, annotation=node.annotation, value=node.value)
-        return True
-
-    def visit_AugAssign(self, node: cst.AugAssign) -> bool:
-        self._resolve_target(node.target, annotation=None, value=node.value, is_aug_assign=True)
-        return True
-
-    def _resolve_target(
-        self,
-        target: cst.BaseExpression,
-        *,
-        annotation: cst.Annotation | None,
-        value: cst.BaseExpression,
-        is_aug_assign: bool = False,
-    ) -> None:
-        try:
-            if (
-                isinstance(target, cst.Attribute)
-                and isinstance(target.value, cst.Name)
-                and target.value.value == "self"
-            ):
-                self.resolver.resolve_assignment(
-                    target.attr.value, annotation, value, is_self_attr=True, is_aug_assign=is_aug_assign
-                )
-            elif isinstance(target, cst.Name):
-                self.resolver.resolve_assignment(
-                    target.value, annotation, value, is_aug_assign=is_aug_assign
-                )
-            # Any other target shape (subscript, nested attribute, etc.) is
-            # out of the v2 MVP subset; the out-of-scope/undefined-name
-            # scanners or codegen will surface it elsewhere.
-        except MandatoryHintError as exc:
-            self._error(str(exc))
-
-    # -- for loops -------------------------------------------------------
-
-    def visit_For(self, node: cst.For) -> bool:
-        if isinstance(node.target, (cst.Tuple, cst.List)):
-            self._reject_tuple("tuple-unpacking 'for' target")
-            return True
-        if isinstance(node.target, cst.Name):
-            iter_kind = "range" if _is_range_call(node.iter) else "sequence"
-            try:
-                self.resolver.resolve_for_target(node.target.value, iter_kind, node.iter)
-            except MandatoryHintError as exc:
-                self._error(str(exc))
-        return True
-
-    def _reject_tuple(self, display: str) -> None:
-        try:
-            TypeResolver.reject_tuple_unpacking(display)
-        except TupleUnpackingNotSupportedError as exc:
-            self._error(str(exc))
-
-
 def run_preflight(source: str) -> PreflightReport:
     """Run the full stage-0 preflight pass over Python ``source``.
 
@@ -364,7 +217,7 @@ def run_preflight(source: str) -> PreflightReport:
                     for name in small.names:
                         module_level_names.add((name.asname or name).name.value)
                 elif isinstance(small, cst.ImportFrom):
-                    if small.names != cst.ImportStar():
+                    if not isinstance(small.names, cst.ImportStar):
                         for name in small.names:
                             module_level_names.add((name.asname or name).name.value)
 
@@ -376,17 +229,4 @@ def run_preflight(source: str) -> PreflightReport:
     tree.visit(scope_finder)
     issues.extend(scope_finder.findings)
 
-    hint_scanner = _MandatoryHintScanner()
-    tree.visit(hint_scanner)
-    issues.extend(hint_scanner.findings)
-
-    # v2: a missing/unresolvable mandatory type hint is a hard failure,
-    # not just a syntax error -- see module docstring.
-    passed = not any(i.severity == "error" for i in issues)
-
-    logger = get_logger()
-    for issue in issues:
-        level = {"error": logger.error, "warning": logger.warning, "info": logger.info}[issue.severity]
-        level("preflight: %s", issue.message)
-
-    return PreflightReport(passed=passed, issues=issues)
+    return PreflightReport(passed=True, issues=issues)

@@ -61,13 +61,16 @@ _EXPR_FIELDS = {"value", "left", "right", "operand", "func", "test", "index", "i
 _EXPR_LIST_FIELDS = {"values", "args", "elements", "keys"}
 _STMT_LIST_FIELDS = {"body", "orelse"}
 
+# Fields whose values are an OwnershipDecision (or None).
+_OWNERSHIP_FIELDS = {"ownership", "return_ownership"}
+
 
 def module_to_dict(module: schema.ModuleNode) -> dict[str, Any]:
-    """Convert a :class:`~py2rust.ir.schema.ModuleNode` to a plain JSON-safe dict.
+    """Convert a :class:`~ir.schema.ModuleNode` to a plain JSON-safe dict.
 
     ``dataclasses.asdict`` recurses into nested dataclasses based on their
     *actual* runtime type, so this works uniformly across the tagged
-    unions defined in :mod:`py2rust.ir.schema` without needing a per-class
+    unions defined in :mod:`ir.schema` without needing a per-class
     ``to_dict`` method.
     """
 
@@ -93,15 +96,29 @@ def _reconstruct_stmt(data: dict[str, Any]) -> Any:
 
 
 def _reconstruct_type_slot(data: dict[str, Any]) -> schema.TypeSlot:
-    # v2: TypeSlot is always a ConcreteType now (no more TypeHole) -- see
-    # ir.schema's Milestone 1 notes. A "hole"-kind entry can only appear
-    # in an old v1_core IR file, which isn't a supported input for v2.
-    if data["kind"] != "concrete":
-        raise ValueError(
-            f"unsupported type-slot kind {data['kind']!r} -- looks like a v1_core IR "
-            "file (type holes), which v2 (schema_version=v2_ownership) can't load"
-        )
-    return schema.ConcreteType(value=data["value"])
+    if data["kind"] == "concrete":
+        return schema.ConcreteType(value=data["value"])
+    return schema.TypeHole(id=data["id"], known_info=list(data.get("known_info", [])))
+
+
+def _reconstruct_directive(data: dict[str, Any] | None) -> schema.Directive | None:
+    if data is None:
+        return None
+    return schema.Directive(
+        directive_key=data["directive_key"], value=data["value"], raw_text=data["raw_text"]
+    )
+
+
+def _reconstruct_ownership(data: dict[str, Any] | None) -> schema.OwnershipDecision | None:
+    if data is None:
+        return None
+    return schema.OwnershipDecision(
+        value=data["value"],
+        source=data["source"],
+        directive=_reconstruct_directive(data.get("directive")),
+        evidence=list(data.get("evidence", [])),
+        conflict=data.get("conflict"),
+    )
 
 
 def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
@@ -116,6 +133,8 @@ def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
             kwargs[key] = _reconstruct_type_slot(value)
         elif key == "return_type" and isinstance(value, dict):
             kwargs[key] = _reconstruct_type_slot(value)
+        elif key in _OWNERSHIP_FIELDS:
+            kwargs[key] = _reconstruct_ownership(value)
         elif key in _EXPR_FIELDS and isinstance(value, dict):
             kwargs[key] = _reconstruct_expr(value)
         elif key in _EXPR_LIST_FIELDS and isinstance(value, list):
@@ -138,7 +157,7 @@ def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
                 schema.Param(
                     name=p["name"],
                     type=_reconstruct_type_slot(p["type"]),
-                    ownership=p.get("ownership"),
+                    ownership=_reconstruct_ownership(p.get("ownership")),
                 )
                 for p in value
             ]
@@ -155,7 +174,7 @@ def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
 
 
 def module_from_dict(data: dict[str, Any]) -> schema.ModuleNode:
-    """Reconstruct a :class:`~py2rust.ir.schema.ModuleNode` from its dict form."""
+    """Reconstruct a :class:`~ir.schema.ModuleNode` from its dict form."""
 
     body = []
     for entry in data.get("body", []):
@@ -192,7 +211,7 @@ def save_module(module: schema.ModuleNode, path: Path, *, read_only: bool = True
 
 
 def load_module(path: Path) -> schema.ModuleNode:
-    """Read an IR file back into a :class:`~py2rust.ir.schema.ModuleNode`.
+    """Read an IR file back into a :class:`~ir.schema.ModuleNode`.
 
     Read-only permissions on the file are not touched by this function --
     loading an IR file for inspection should never require unlocking it.

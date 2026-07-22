@@ -1,15 +1,9 @@
 """Stage 6 (part 1): collect a run summary and write ``ambiguities.md``.
 
 Walks the finished IR one more time to gather every marker that ended up
-in the generated Rust -- ambiguities and unsupported fragments -- into
-one scannable report, instead of requiring a grep through the output
-file.
-
-v2 (Milestone 1): type holes no longer exist (mandatory hints mean every
-type slot is already resolved by the time this runs), so this no longer
-tracks them. A future milestone (2) is expected to add an analogous
-"ownership inferred" tracking list here once the ownership resolver
-exists -- see ROADMAP Milestone 7's "ownership/borrow-decision report".
+in the generated Rust -- type holes, ambiguities, and unsupported
+fragments -- into one scannable report, instead of requiring a grep
+through the output file.
 """
 
 from __future__ import annotations
@@ -24,17 +18,28 @@ from ir import schema
 class RunSummary:
     functions_converted: int = 0
     classes_converted: int = 0
+    type_holes: list[str] = field(default_factory=list)
     ambiguities: list[str] = field(default_factory=list)
     unsupported: list[str] = field(default_factory=list)
+    imported_modules_converted: list[str] = field(default_factory=list)
+    imported_modules_skipped: list[str] = field(default_factory=list)
 
     def to_markdown(self) -> str:
         lines = ["# Conversion summary", ""]
         lines.append(f"- Functions converted: {self.functions_converted}")
         lines.append(f"- Classes converted: {self.classes_converted}")
+        lines.append(f"- Type holes remaining: {len(self.type_holes)}")
         lines.append(f"- Ambiguities flagged: {len(self.ambiguities)}")
         lines.append(f"- Unsupported constructs preserved: {len(self.unsupported)}")
+        if self.imported_modules_converted or self.imported_modules_skipped:
+            lines.append(f"- Imported modules converted: {len(self.imported_modules_converted)}")
+            lines.append(f"- Imported modules skipped/unresolved: {len(self.imported_modules_skipped)}")
         lines.append("")
 
+        if self.type_holes:
+            lines.append("## Type holes")
+            lines.extend(f"- {h}" for h in self.type_holes)
+            lines.append("")
         if self.ambiguities:
             lines.append("## Ambiguities")
             lines.extend(f"- {a}" for a in self.ambiguities)
@@ -43,12 +48,28 @@ class RunSummary:
             lines.append("## Unsupported constructs (captured, not lost)")
             lines.extend(f"- {u}" for u in self.unsupported)
             lines.append("")
+        if self.imported_modules_converted:
+            lines.append("## Imported modules converted (see ir/_imports/)")
+            lines.extend(f"- {m}" for m in self.imported_modules_converted)
+            lines.append("")
+        if self.imported_modules_skipped:
+            lines.append("## Imported modules skipped or unresolved")
+            lines.extend(f"- {m}" for m in self.imported_modules_skipped)
+            lines.append("")
 
         return "\n".join(lines)
 
 
+def _walk_type_slot(slot: schema.TypeSlot, context: str, summary: RunSummary) -> None:
+    if isinstance(slot, schema.TypeHole):
+        info = "; ".join(slot.known_info) if slot.known_info else "no evidence gathered"
+        summary.type_holes.append(f"{slot.id} ({context}): {info}")
+
+
 def _walk_stmt(stmt: schema.Stmt, summary: RunSummary) -> None:
     if isinstance(stmt, schema.AssignStmt):
+        if stmt.target_kind == "name":
+            _walk_type_slot(stmt.type, f"assignment to '{stmt.target}'", summary)
         for c in stmt.comments.leading + stmt.comments.trailing:
             if c.text.startswith("AMBIGUOUS"):
                 summary.ambiguities.append(c.text)
@@ -76,6 +97,9 @@ def _walk_stmt(stmt: schema.Stmt, summary: RunSummary) -> None:
 
 def _walk_function(fn: schema.FunctionDefNode, summary: RunSummary) -> None:
     summary.functions_converted += 1
+    for p in fn.params:
+        _walk_type_slot(p.type, f"param '{p.name}' of '{fn.name}'", summary)
+    _walk_type_slot(fn.return_type, f"return type of '{fn.name}'", summary)
     if fn.ambiguity is not None:
         summary.ambiguities.append(f"{fn.name}: {fn.ambiguity.rationale}")
     for s in fn.body:
@@ -93,6 +117,8 @@ def build_summary(module: schema.ModuleNode) -> RunSummary:
             summary.classes_converted += 1
             if top.ambiguity is not None:
                 summary.ambiguities.append(f"{top.name}: {top.ambiguity.rationale}")
+            for f in top.fields:
+                _walk_type_slot(f.type, f"field '{f.name}' of '{top.name}'", summary)
             for m in top.methods:
                 _walk_function(m, summary)
         elif isinstance(top, schema.UnsupportedStmt):

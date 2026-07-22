@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "py2rust"
+name = "code-convert-helper"
 version = "0.1.0"
 description = "A Python-to-Rust conversion assistant that preserves comments and marks every judgment call it makes."
 readme = "README.md"
@@ -24,38 +24,14 @@ dev = [
 ]
 
 [project.scripts]
-py2rust = "cli:app"
+code-convert-helper = "cli:app"
 
-# Package layout: everything under src/ installs as flat top-level
-# modules (ir, codegen, typing_inference, ambiguity, plugins, preflight,
-# report, cli, pipeline) -- there is no `py2rust` wrapper package. This
-# matches every import already in the codebase (`from ir import builder`,
-# `from codegen import rust_writer`, etc.) and in the test suite.
 [tool.hatch.build.targets.wheel]
-packages = [
-    "src/ir",
-    "src/typing_inference",
-    "src/ambiguity",
-    "src/codegen",
-    "src/plugins",
-    "src/preflight",
-    "src/report",
-]
-[tool.hatch.build.targets.wheel.force-include]
-# `include` alone silently drops loose top-level modules (only "packages"
-# entries reliably survive) -- force-include with an explicit
-# source -> destination mapping is what actually places these at the
-# wheel's top level.
-"src/__init__.py" = "__init__.py"
-"src/cli.py" = "cli.py"
-"src/pipeline.py" = "pipeline.py"
+packages = ["src"]
 
 [tool.hatch.build.targets.wheel.sources]
-# Strip the "src/" prefix so the packages/files listed above land at the
-# top level of the installed distribution instead of under a `src.*`
-# namespace.
-"src" = ""
+src = ""
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]

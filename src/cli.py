@@ -1,8 +1,8 @@
-"""The ``py2rust`` command-line interface.
+"""The ``code-convert-helper`` command-line interface.
 
 Built with `typer <https://typer.tiangolo.com/>`_ -- arguments and options
 are driven by type hints, which fits a project whose whole subject is
-type inference. Run ``py2rust --help`` for the full command list.
+type inference. Run ``code-convert-helper --help`` for the full command list.
 """
 
 from __future__ import annotations
@@ -15,13 +15,12 @@ from rich.console import Console
 from rich.table import Table
 
 import pipeline
-from config import PipelineConfig
 from ir import storage
 from preflight import checks
 from report.split_check import SplitCheckConfig
 
 app = typer.Typer(
-    name="py2rust",
+    name="code-convert-helper",
     help="Convert a Python file's core-subset code to Rust, preserving comments.",
     no_args_is_help=True,
 )
@@ -32,9 +31,6 @@ console = Console()
 def preflight(file: Path = typer.Argument(..., exists=True, help="Python file to check.")) -> None:
     """Run stage-0 preflight checks only, and print the report."""
 
-    from logging_setup import configure_logging
-
-    configure_logging(output_dir=None)
     source = file.read_text(encoding="utf-8")
     report = checks.run_preflight(source)
 
@@ -67,8 +63,24 @@ def convert(
     ),
     split_ratio: float = typer.Option(1.5, help="Split-check ratio threshold (output/input lines)."),
     split_lines: int = typer.Option(500, help="Split-check absolute line-count threshold."),
-    strict: bool = typer.Option(
-        False, "--strict/--no-strict", help="Treat warnings as fatal errors (default off)."
+    warnings_as_fatal: bool = typer.Option(
+        False,
+        "--warnings-as-fatal/--no-warnings-as-fatal",
+        help=(
+            "Treat preflight warnings and inferred/conflicting ownership "
+            "decisions as hard failures instead of printed warnings."
+        ),
+    ),
+    recurse_imports: bool = typer.Option(
+        True,
+        "--recurse-imports/--no-recurse-imports",
+        help=(
+            "Follow and convert this file's imports (local modules and "
+            "installed third-party packages) under ir/_imports/."
+        ),
+    ),
+    import_depth: int = typer.Option(
+        5, "--import-depth", help="Maximum import-recursion depth from the entry file."
     ),
 ) -> None:
     """Convert FILE to Rust, writing output, IR, and an ambiguity report."""
@@ -76,13 +88,29 @@ def convert(
     split_config = SplitCheckConfig(
         ratio_threshold=split_ratio, absolute_line_threshold=split_lines, enabled=split_check
     )
-    config = PipelineConfig(warnings_as_fatal=strict)
-    result = pipeline.convert_file(file, out, emit_ir=emit_ir, split_config=split_config, config=config)
+    result = pipeline.convert_file(
+        file,
+        out,
+        emit_ir=emit_ir,
+        split_config=split_config,
+        warnings_as_fatal=warnings_as_fatal,
+        recurse_imports=recurse_imports,
+        import_depth=import_depth,
+    )
 
     if not result.preflight.passed:
         console.print(f"[bold red]Preflight failed for {file}:[/bold red]")
         for issue in result.preflight.errors():
             console.print(f"  [red]error[/red] {issue.message}")
+        raise typer.Exit(code=1)
+
+    if warnings_as_fatal and result.fatal_warnings:
+        console.print(
+            f"[bold red]Conversion stopped[/bold red] -- warnings-as-fatal is on and "
+            f"{len(result.fatal_warnings)} warning(s) were raised for {file}:"
+        )
+        for msg in result.fatal_warnings:
+            console.print(f"  [red]fatal[/red] {msg}")
         raise typer.Exit(code=1)
 
     rust_path = out / f"{file.stem}.rs"
@@ -92,10 +120,24 @@ def convert(
         s = result.run_summary
         console.print(
             f"  functions: {s.functions_converted}  classes: {s.classes_converted}  "
-            f"ambiguities: {len(s.ambiguities)}  unsupported: {len(s.unsupported)}"
+            f"type holes: {len(s.type_holes)}  ambiguities: {len(s.ambiguities)}  "
+            f"unsupported: {len(s.unsupported)}"
         )
         console.print(f"  full report: {out / 'ambiguities.md'}")
-        console.print(f"  run log: {out / 'py2rust.log'}")
+        if recurse_imports:
+            console.print(
+                f"  imports converted: {len(s.imported_modules_converted)}  "
+                f"skipped/unresolved: {len(s.imported_modules_skipped)}  "
+                f"(depth limit {import_depth}) -- see {out / 'ir' / '_imports'}"
+            )
+
+    if result.ownership_log is not None:
+        log = result.ownership_log
+        console.print(
+            f"  ownership decisions: {len(log.entries)}  "
+            f"inferred: {len(log.inferred_entries())}  conflicts: {len(log.conflicts())}  "
+            f"-- see {out / 'ownership_log.md'}"
+        )
 
     if result.split_result is not None and result.split_result.triggered:
         console.print(f"  [yellow]split suggestion:[/yellow] {result.split_result.reason}")
@@ -116,15 +158,11 @@ def inspect_ir(ir_file: Path = typer.Argument(..., exists=True, help="A .pyrir.j
 
 @app.command()
 def version() -> None:
-    """Print the py2rust version."""
+    """Print the code-convert-helper version."""
 
-    import importlib.metadata
+    from importlib.metadata import version as pkg_version
 
-    try:
-        ver = importlib.metadata.version("py2rust")
-    except importlib.metadata.PackageNotFoundError:
-        ver = "0.1.0"
-    console.print(f"py2rust {ver}")
+    console.print(f"code-convert-helper {pkg_version('code-convert-helper')}")
 
 
 if __name__ == "__main__":

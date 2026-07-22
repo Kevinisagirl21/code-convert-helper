@@ -5,18 +5,14 @@ This is the front end's core: it walks a ``libcst`` concrete syntax tree
 it belongs to -- no heuristic re-association needed) and produces the
 :mod:`ir.schema` data structures that get serialized to disk.
 
-Only the v2 MVP subset is understood here. Anything else becomes an
+Only the v1 core subset is understood here. Anything else becomes an
 :class:`~ir.schema.UnsupportedStmt` carrying the exact original
 source text, per the "capture, don't drop" principle in
 ``ARCHITECTURE.md``.
 
-v2 (Milestone 1): type resolution now goes through the shared
-:class:`~typing_inference.resolver.TypeResolver` instead of v1's
-hole-producing ``typing_inference.infer`` helpers. The builder assumes
-:func:`preflight.checks.run_preflight` has already hard-rejected any file
-with a missing mandatory hint -- a :class:`~typing_inference.resolver.MandatoryHintError`
-raised here indicates that invariant was violated (builder called
-without a passing preflight run), not a normal "no hint" case.
+Milestone 2 adds ``#!`` directive recognition and ownership resolution at
+the three sites the roadmap specifies: parameters, return types, and
+assignments (see :mod:`directives.parser` and :mod:`ownership.resolver`).
 """
 
 from __future__ import annotations
@@ -27,8 +23,10 @@ import libcst as cst
 from libcst.metadata import CodeRange, PositionProvider
 
 from ambiguity import resolver as ambiguity
+from directives import parser as directive_parser
 from ir import schema
-from typing_inference.resolver import TypeResolver
+from ownership import resolver as ownership
+from typing_inference import infer
 
 _node_counter = itertools.count(1)
 
@@ -79,12 +77,10 @@ class IRBuilder:
         wrapper = cst.MetadataWrapper(cst.parse_module(source))
         self._positions: dict[cst.CSTNode, CodeRange] = wrapper.resolve(PositionProvider)
         self._module = wrapper.module
-        # One flat, whole-file resolver -- see typing_inference.resolver
-        # module docstring for why this isn't per-function/per-class
-        # scoped. `self.x` fields naturally persist across a class's
-        # methods through this same table (keyed as "self.<attr>"), which
-        # replaces v1's separate `_current_field_types` dict.
-        self._resolver = TypeResolver()
+        # Populated while building a class's methods, so a `self.x = ...`
+        # assignment can reuse the field type already established by the
+        # constructor instead of re-deriving a fresh (usually emptier) hole.
+        self._current_field_types: dict[str, schema.TypeSlot] = {}
 
     # -- helpers -----------------------------------------------------
 
@@ -125,15 +121,75 @@ class IRBuilder:
         leading_lines = getattr(node, "leading_lines", ())
         return schema.Comments(leading=self._leading_comments(leading_lines))
 
+    # -- directive helpers (Milestone 2) ---------------------------------
+
+    def _directive_from_comment_text(self, text: str | None) -> schema.Directive | None:
+        if text is None:
+            return None
+        return directive_parser.parse_directive_text(text)
+
+    def _assignment_directive(
+        self, trailing_whitespace: cst.TrailingWhitespace | None
+    ) -> schema.Directive | None:
+        """A ``#!`` directive on an assignment's own trailing comment."""
+
+        if trailing_whitespace is None or trailing_whitespace.comment is None:
+            return None
+        return self._directive_from_comment_text(trailing_whitespace.comment.value)
+
+    def _param_directive(self, param: cst.Param) -> schema.Directive | None:
+        """A ``#!`` directive trailing a parameter's comma.
+
+        Only reachable when the parameter has an explicit trailing comma
+        (the common, e.g. Black-formatted, multi-line style) -- a
+        directive on a parameter with no following comma (e.g. the very
+        last parameter written on one line with the closing paren) has
+        nowhere in the CST to attach to and is simply not recognized in
+        v1. This is a real limitation, not a silent bug: such a
+        parameter just falls back to usage-based inference like any
+        parameter with no directive at all.
+        """
+
+        comma = param.comma
+        if not isinstance(comma, cst.Comma):
+            return None
+        ws_after = comma.whitespace_after
+        first_line = getattr(ws_after, "first_line", None)
+        if first_line is None or first_line.comment is None:
+            return None
+        return self._directive_from_comment_text(first_line.comment.value)
+
+    def _return_type_directive(self, body: cst.BaseSuite) -> schema.Directive | None:
+        """A ``#!`` directive trailing a function's ``-> ReturnType:`` line."""
+
+        if not isinstance(body, cst.IndentedBlock):
+            return None
+        header = body.header
+        if header is None or header.comment is None:
+            return None
+        return self._directive_from_comment_text(header.comment.value)
+
     # -- expressions ---------------------------------------------------
 
     def build_expr(self, node: cst.BaseExpression) -> schema.Expr:
         if isinstance(node, cst.Integer):
-            return schema.ConstantExpr(value=int(node.value), py_type="int")
+            # base=0 lets int() auto-detect 0x/0o/0b prefixes and tolerate
+            # underscore separators (e.g. `1_000`, `0x1A`) -- real-world
+            # Python source (especially third-party code reached via
+            # import recursion) uses far more than plain decimal literals.
+            return schema.ConstantExpr(value=int(node.value, 0), py_type="int")
         if isinstance(node, cst.Float):
             return schema.ConstantExpr(value=float(node.value), py_type="float")
         if isinstance(node, (cst.SimpleString, cst.ConcatenatedString)):
-            return schema.ConstantExpr(value=node.evaluated_value, py_type="str")
+            evaluated = node.evaluated_value
+            if isinstance(evaluated, bytes):
+                # A bytes literal (b"...") isn't part of the v1 core
+                # subset's string type -- fall through to the
+                # unrecognized-expression placeholder below rather than
+                # smuggling a non-JSON-serializable `bytes` value into
+                # the IR as if it were a plain str constant.
+                return schema.NameExpr(name=f"/* unrecognized: {self._source_text(node)} */")
+            return schema.ConstantExpr(value=evaluated, py_type="str")
         if isinstance(node, cst.Name):
             if node.value == "True":
                 return schema.ConstantExpr(value=True, py_type="bool")
@@ -228,13 +284,6 @@ class IRBuilder:
             iter_kind = "range"
         else:
             iter_kind = "sequence"
-        # Mandatory-hint resolution: no hint syntax exists for a `for`
-        # target, so its type is always derived from the iterable (range
-        # -> int, a hinted list -> its element type). Preflight has
-        # already validated this is derivable; register it here too so
-        # statements in the loop body that reference the target resolve
-        # correctly.
-        self._resolver.resolve_for_target(target_name, iter_kind, iter_expr)
         return schema.ForStmt(
             target=target_name,
             iter=self.build_expr(iter_expr),
@@ -243,39 +292,56 @@ class IRBuilder:
             comments=self._compound_comments(stmt),
         )
 
-    #: Maps an augmented-assignment operator to its plain binary-op text,
-    #: so `x += 1` can be rebuilt as an ordinary mutation `x = x + 1`
-    #: (`target_kind="reassign"`, no `let`/type in codegen) rather than
-    #: needing a dedicated compound-assignment codegen path -- that's a
-    #: reasonable Milestone 3 refinement, not required to keep the
-    #: pipeline working end-to-end for Milestone 1.
-    _AUG_OPS = {
-        cst.AddAssign: "+",
-        cst.SubtractAssign: "-",
-        cst.MultiplyAssign: "*",
-        cst.DivideAssign: "/",
-        cst.ModuloAssign: "%",
-    }
-
     def _build_simple_stmt_line(
         self, node: cst.SimpleStatementLine, sibling_body: list[cst.BaseStatement]
     ) -> schema.Stmt:
         comments = self._simple_stmt_comments(node)
         small = node.body[0]
         if isinstance(small, cst.Assign):
-            return self._build_assign(small.targets[0].target, None, small.value, comments)
-        if isinstance(small, cst.AnnAssign):
-            if small.value is None:
-                # Bare declaration with no value (`x: int`) -- not part of
-                # the v2 MVP subset (nothing to initialize with in Rust).
-                return schema.UnsupportedStmt(
-                    source_text=self._source_text(node),
-                    reason="bare annotated declaration with no value is not part of the v2 MVP subset",
-                    comments=comments,
+            directive = self._assignment_directive(node.trailing_whitespace)
+            if directive is not None:
+                # A recognized directive is metadata, not documentation --
+                # don't also duplicate it as an ordinary trailing comment.
+                comments.trailing = []
+            target = small.targets[0].target
+            if (
+                isinstance(target, cst.Attribute)
+                and isinstance(target.value, cst.Name)
+                and target.value.value == "self"
+            ):
+                attr_name = target.attr.value
+                inferred = self._current_field_types.get(attr_name) or infer.infer_assignment_type(
+                    attr_name, small.value, sibling_body
                 )
-            return self._build_assign(small.target, small.annotation, small.value, comments)
-        if isinstance(small, cst.AugAssign):
-            return self._build_aug_assign(small, comments)
+                inferred_own_value, inferred_own_evidence = ownership.infer_assignment_ownership(
+                    f"self.{attr_name}"
+                )
+                own_decision = ownership.resolve_ownership(
+                    directive, inferred_own_value, inferred_own_evidence
+                )
+                return schema.AssignStmt(
+                    target=f"self.{attr_name}",
+                    value=self.build_expr(small.value),
+                    type=inferred,
+                    target_kind="self_attr",
+                    comments=comments,
+                    ownership=own_decision,
+                )
+            target_name = target.value if isinstance(target, cst.Name) else self._source_text(target)
+            inferred = infer.infer_assignment_type(target_name, small.value, sibling_body)
+            inferred_own_value, inferred_own_evidence = ownership.infer_assignment_ownership(
+                target_name
+            )
+            own_decision = ownership.resolve_ownership(
+                directive, inferred_own_value, inferred_own_evidence
+            )
+            return schema.AssignStmt(
+                target=target_name,
+                value=self.build_expr(small.value),
+                type=inferred,
+                comments=comments,
+                ownership=own_decision,
+            )
         if isinstance(small, cst.Return):
             value = self.build_expr(small.value) if small.value is not None else None
             return schema.ReturnStmt(value=value, comments=comments)
@@ -288,87 +354,7 @@ class IRBuilder:
             return schema.RaiseStmt(message=message, comments=comments)
         return schema.UnsupportedStmt(
             source_text=self._source_text(node),
-            reason=f"'{type(small).__name__}' is not part of the v2 MVP subset",
-            comments=comments,
-        )
-
-    def _build_assign(
-        self,
-        target: cst.BaseExpression,
-        annotation: cst.Annotation | None,
-        value: cst.BaseExpression,
-        comments: schema.Comments,
-    ) -> schema.Stmt:
-        if isinstance(target, (cst.Tuple, cst.List)):
-            # Preflight already hard-rejects this; this is only a defensive
-            # fallback for callers that build IR without running preflight
-            # first (e.g. a unit test targeting the builder in isolation).
-            return schema.UnsupportedStmt(
-                source_text=self._source_text(target),
-                reason="tuple/multi-target assignment is not yet supported",
-                comments=comments,
-            )
-        if (
-            isinstance(target, cst.Attribute)
-            and isinstance(target.value, cst.Name)
-            and target.value.value == "self"
-        ):
-            attr_name = target.attr.value
-            resolved = self._resolver.resolve_assignment(attr_name, annotation, value, is_self_attr=True)
-            return schema.AssignStmt(
-                target=f"self.{attr_name}",
-                value=self.build_expr(value),
-                type=resolved,
-                target_kind="self_attr",
-                comments=comments,
-            )
-        target_name = target.value if isinstance(target, cst.Name) else self._source_text(target)
-        resolved = self._resolver.resolve_assignment(target_name, annotation, value)
-        return schema.AssignStmt(
-            target=target_name,
-            value=self.build_expr(value),
-            type=resolved,
-            comments=comments,
-        )
-
-    def _build_aug_assign(self, node: cst.AugAssign, comments: schema.Comments) -> schema.Stmt:
-        target = node.target
-        op = self._AUG_OPS.get(type(node.operator), "?")
-        if (
-            isinstance(target, cst.Attribute)
-            and isinstance(target.value, cst.Name)
-            and target.value.value == "self"
-        ):
-            attr_name = target.attr.value
-            resolved = self._resolver.resolve_assignment(
-                attr_name, None, node.value, is_self_attr=True, is_aug_assign=True
-            )
-            new_value = schema.BinOpExpr(
-                op=op,
-                left=schema.AttributeExpr(value=schema.NameExpr(name="self"), attr=attr_name),
-                right=self.build_expr(node.value),
-            )
-            return schema.AssignStmt(
-                target=f"self.{attr_name}",
-                value=new_value,
-                type=resolved,
-                target_kind="self_attr",
-                comments=comments,
-            )
-        target_name = target.value if isinstance(target, cst.Name) else self._source_text(target)
-        resolved = self._resolver.resolve_assignment(target_name, None, node.value, is_aug_assign=True)
-        new_value = schema.BinOpExpr(op=op, left=schema.NameExpr(name=target_name), right=self.build_expr(node.value))
-        # target_kind is deliberately left as the default "name" here (not
-        # "reassign") so this flows through apply_mutability's usual
-        # count-and-mark pass -- the same pass that turns a repeated plain
-        # `t = t + i` accumulator into `let mut` + later `reassign`. `x +=
-        # 1` is exactly that pattern with different surface syntax, and
-        # should be treated identically rather than needing its own
-        # mutability bookkeeping.
-        return schema.AssignStmt(
-            target=target_name,
-            value=new_value,
-            type=resolved,
+            reason=f"'{type(small).__name__}' is not part of the v1 core subset",
             comments=comments,
         )
 
@@ -381,22 +367,56 @@ class IRBuilder:
     # -- top level -------------------------------------------------------
 
     def build_function(self, node: cst.FunctionDef) -> schema.FunctionDefNode:
+        body_stmts = list(node.body.body) if isinstance(node.body, cst.IndentedBlock) else []
+
         params = []
+        param_type_lookup: dict[str, schema.TypeSlot] = {}
         for i, p in enumerate(node.params.params):
             if i == 0 and p.name.value == "self":
                 # Rust methods take &self / &mut self implicitly; not a
                 # regular typed parameter. See codegen for the self-vs-
                 # mut-self heuristic.
                 continue
-            # Mandatory hint -- preflight has already hard-rejected a
-            # missing one, so this should never raise in normal pipeline
-            # use. See TypeResolver.resolve_param.
-            p_type = self._resolver.resolve_param(p.name.value, p.annotation)
-            params.append(schema.Param(name=p.name.value, type=p_type))
+            annotated = infer.type_from_annotation(p.annotation)
+            if annotated is not None:
+                p_type = annotated
+            else:
+                p_type = infer.new_hole(["no type hint; not yet inferred from call sites"])
 
-        # v2: return type is always an explicit, mandatory hint -- no more
-        # inferring it from `return` statements like v1 did.
-        return_type = self._resolver.resolve_return(node.name.value, node.returns)
+            directive = self._param_directive(p)
+            inferred_value, inferred_evidence = ownership.infer_param_ownership(
+                p.name.value, body_stmts, p_type
+            )
+            own_decision = ownership.resolve_ownership(directive, inferred_value, inferred_evidence)
+
+            params.append(schema.Param(name=p.name.value, type=p_type, ownership=own_decision))
+            param_type_lookup[p.name.value] = p_type
+
+        explicit_return = infer.type_from_annotation(node.returns)
+        if explicit_return is not None:
+            return_type = explicit_return
+        else:
+            # No annotation -- infer from the body's `return` statements
+            # rather than silently defaulting to `()`, which would produce
+            # a signature that doesn't match a body that actually returns
+            # a value (a real compile error, not a conservative default).
+            return_type = infer.infer_return_type(
+                body_stmts,
+                param_type_lookup,
+                self._current_field_types,
+            )
+
+        return_directive = self._return_type_directive(node.body)
+        return_texts = self._collect_return_texts(body_stmts)
+        param_ownership_lookup = {
+            p.name: p.ownership.value for p in params if p.ownership is not None
+        }
+        inferred_return_value, inferred_return_evidence = ownership.infer_return_ownership(
+            return_texts, param_ownership_lookup
+        )
+        return_ownership = ownership.resolve_ownership(
+            return_directive, inferred_return_value, inferred_return_evidence
+        )
 
         body = self.build_block(node.body)
         apply_mutability(body)
@@ -409,7 +429,23 @@ class IRBuilder:
             body=body,
             source_span=self._span(node),
             comments=self._compound_comments(node),
+            return_ownership=return_ownership,
         )
+
+    def _collect_return_texts(self, body: list[cst.BaseStatement]) -> list[str]:
+        texts: list[str] = []
+
+        class _ReturnTextFinder(cst.CSTVisitor):
+            def visit_Return(inner_self, node: cst.Return) -> None:
+                if node.value is not None:
+                    texts.append(self._source_text(node.value))
+
+            def visit_FunctionDef(inner_self, node: cst.FunctionDef) -> bool:
+                return False  # don't descend into nested function defs
+
+        for stmt in body:
+            stmt.visit(_ReturnTextFinder())
+        return texts
 
     def build_class(self, node: cst.ClassDef) -> schema.ClassDefNode:
         unsupported_bases = [self._source_text(b.value) for b in node.bases]
@@ -418,18 +454,21 @@ class IRBuilder:
 
         body = node.body.body if isinstance(node.body, cst.IndentedBlock) else []
 
-        # First pass: find __init__ (if any) and register its params/fields
-        # with the shared resolver, so the second pass can let other
-        # methods' `self.x = ...` reuse those types (looked up under the
-        # "self.<attr>" key) instead of re-deriving anything.
+        # First pass: find __init__ (if any) and derive field types from it,
+        # so the second pass can let other methods' `self.x = ...` reuse
+        # those types instead of re-deriving weaker evidence.
         for member in body:
             if isinstance(member, cst.FunctionDef) and member.name.value == "__init__":
                 fields = self._fields_from_init(member)
                 break
 
-        for member in body:
-            if isinstance(member, cst.FunctionDef) and member.name.value != "__init__":
-                methods.append(self.build_function(member))
+        self._current_field_types = {f.name: f.type for f in fields}
+        try:
+            for member in body:
+                if isinstance(member, cst.FunctionDef) and member.name.value != "__init__":
+                    methods.append(self.build_function(member))
+        finally:
+            self._current_field_types = {}
 
         class_ir = schema.ClassDefNode(
             node_id=_next_id("class"),
@@ -445,47 +484,67 @@ class IRBuilder:
 
     def _fields_from_init(self, init: cst.FunctionDef) -> list[schema.ClassFieldNode]:
         fields: list[schema.ClassFieldNode] = []
-
-        # Register __init__'s params with the shared resolver -- mandatory
-        # hints, same as any other function. This is what lets the very
-        # common `self.x = x` passthrough below (and `_derive_from_expr`
-        # for a `self.x = [x]`-style wrap) resolve without a redundant
-        # hint on the field assignment itself.
-        for p in init.params.params:
-            if p.name.value == "self":
-                continue
-            self._resolver.resolve_param(p.name.value, p.annotation)
-
         if not isinstance(init.body, cst.IndentedBlock):
             return fields
 
-        for stmt in init.body.body:
+        # Build a lookup of __init__ parameter -> inferred type, so the very
+        # common `self.x = x` passthrough can reuse the parameter's type
+        # instead of re-deriving (usually empty) evidence from scratch.
+        param_types: dict[str, schema.TypeSlot] = {}
+        for p in init.params.params:
+            if p.name.value == "self":
+                continue
+            annotated = infer.type_from_annotation(p.annotation)
+            param_types[p.name.value] = annotated or infer.new_hole(
+                ["no type hint on constructor parameter"]
+            )
+
+        statements = list(init.body.body)
+        for stmt in statements:
             if not isinstance(stmt, cst.SimpleStatementLine):
                 continue
             for small in stmt.body:
-                target: cst.BaseExpression | None = None
-                annotation: cst.Annotation | None = None
-                value: cst.BaseExpression | None = None
-                if isinstance(small, cst.Assign):
-                    target = small.targets[0].target
-                    value = small.value
-                elif isinstance(small, cst.AnnAssign) and small.value is not None:
-                    target = small.target
-                    annotation = small.annotation
-                    value = small.value
-                else:
+                if not isinstance(small, cst.Assign):
                     continue
-
+                target = small.targets[0].target
                 if (
                     isinstance(target, cst.Attribute)
                     and isinstance(target.value, cst.Name)
                     and target.value.value == "self"
                 ):
-                    field_type = self._resolver.resolve_assignment(
-                        target.attr.value, annotation, value, is_self_attr=True
+                    field_type = self._field_type_with_param_lookup(
+                        small.value, param_types, target.attr.value, statements
                     )
                     fields.append(schema.ClassFieldNode(name=target.attr.value, type=field_type))
         return fields
+
+    def _field_type_with_param_lookup(
+        self,
+        value: cst.BaseExpression,
+        param_types: dict[str, schema.TypeSlot],
+        field_name: str,
+        sibling_body: list[cst.BaseStatement],
+    ) -> schema.TypeSlot:
+        """Resolve a ``self.x = <value>`` field type, preferring a known
+        constructor-parameter type over generic inference where possible.
+
+        Handles the direct passthrough (``self.x = x``) and the common
+        "wrap a parameter in a collection literal" case (``self.x = [x]``),
+        since both are extremely common in ``__init__`` and a bare literal
+        inference pass alone can't see the parameter's type.
+        """
+
+        if isinstance(value, cst.Name) and value.value in param_types:
+            return param_types[value.value]
+
+        if isinstance(value, cst.List) and value.elements:
+            first = value.elements[0].value
+            if isinstance(first, cst.Name) and first.value in param_types:
+                elem_type = param_types[first.value]
+                if isinstance(elem_type, schema.ConcreteType):
+                    return schema.ConcreteType(value=f"Vec<{elem_type.value}>")
+
+        return infer.infer_assignment_type(field_name, value, sibling_body)
 
     def build_module(self) -> schema.ModuleNode:
         body: list[schema.TopLevel] = []

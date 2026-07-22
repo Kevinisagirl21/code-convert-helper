@@ -1,7 +1,7 @@
 """Stage 4: ambiguity marking.
 
 Where more than one reasonable Rust translation exists for a Python
-pattern, this module records the choice as an :class:`~py2rust.ir.schema.Ambiguity`
+pattern, this module records the choice as an :class:`~ir.schema.Ambiguity`
 attached to the relevant IR node -- never a silent pick. In this
 prototype only one option is actually implemented for each category, but
 the ``alternatives`` list documents what a future revision would add, and

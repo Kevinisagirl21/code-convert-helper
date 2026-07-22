@@ -1,12 +1,14 @@
-py2rust
-======
+code-convert-helper
+=======
 
 A Python-to-Rust conversion assistant that preserves comments and never
 silently resolves a judgment call.
 
-This is the API reference for the **v1 core-subset prototype**. For the
+This is the API reference for the **v1 core-subset prototype**, now with
+Milestone 2's ``#!`` ownership directives and import recursion. For the
 project's design rationale, see ``PROJECT_OVERVIEW.md``,
-``ARCHITECTURE.md``, and ``PLUGIN_API.md`` alongside the repository.
+``ARCHITECTURE.md``, ``PLUGIN_API.md``, and ``ROADMAP.md`` alongside the
+repository.
 
 .. toctree::
    :maxdepth: 2
@@ -17,6 +19,9 @@ project's design rationale, see ``PROJECT_OVERVIEW.md``,
    ir
    typing_inference
    ambiguity
+   directives
+   ownership
+   imports
    codegen
    plugins
    report
@@ -28,8 +33,13 @@ Quick start
 .. code-block:: bash
 
    pip install -e ".[dev]"
-   py2rust preflight examples/sample.py
-   py2rust convert examples/sample.py --out output
+   code-convert-helper preflight examples/sample.py
+   code-convert-helper convert examples/sample.py --out output
+
+That last command also writes ``output/ownership_log.{json,md}`` and, by
+default, follows every import reachable from ``examples/sample.py`` (up
+to ``--import-depth``, default 5), converting each one under
+``output/ir/_imports/`` and ``output/_imports/``.
 
 Indices
 -------

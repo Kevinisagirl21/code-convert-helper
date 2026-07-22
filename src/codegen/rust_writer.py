@@ -4,6 +4,13 @@ Deliberately not built on ``syn``/``quote``-style AST-to-AST generation --
 those normalize away comments and exact formatting. This is a small,
 explicit string-building pretty-printer instead, so comment placement and
 ambiguity markers land exactly where they should.
+
+Milestone 2 adds ownership-aware rendering: a parameter, return type, or
+``let`` binding's resolved :class:`~ir.schema.OwnershipDecision` (from an
+explicit ``#!`` directive, or from usage-based inference) now controls
+whether it renders as ``&T``, ``&mut T``, or a plain owned ``T`` -- never
+silently defaulted the way every parameter used to render as pass-by-
+value regardless of how it was actually used.
 """
 
 from __future__ import annotations
@@ -78,12 +85,70 @@ def _render_trailing(comments: schema.Comments) -> str:
 def _type_slot_to_rust(slot: schema.TypeSlot) -> str:
     """Render a type slot as Rust text.
 
-    v2: every type slot is a resolved :class:`~ir.schema.ConcreteType` --
-    there is no more hole state to render a placeholder for (see
-    ``ir/schema.py``'s Milestone 1 notes).
+    A hole becomes a made-up but syntactically valid type name (e.g.
+    ``TypeHole_hole_0001``) rather than a bare comment -- the file should
+    still *parse* as Rust (and fail to compile loudly on an unknown type),
+    not fail to parse at all. The human-readable evidence goes in a
+    reference comment above the line instead (see :func:`_hole_comment`).
     """
 
-    return slot.value
+    if isinstance(slot, schema.ConcreteType):
+        return slot.value
+    return f"TypeHole_{slot.id}"
+
+
+def _hole_comment(slot: schema.TypeSlot, level: int) -> str:
+    if isinstance(slot, schema.TypeHole) and slot.known_info:
+        info = "; ".join(slot.known_info)
+        return f"{_INDENT * level}// TYPE HOLE {slot.id}: {info}\n"
+    if isinstance(slot, schema.TypeHole):
+        return f"{_INDENT * level}// TYPE HOLE {slot.id}: no evidence gathered yet\n"
+    return ""
+
+
+# ---------------------------------------------------------------------------
+# Ownership rendering (Milestone 2)
+# ---------------------------------------------------------------------------
+
+
+def _ownership_prefix(decision: "schema.OwnershipDecision | None") -> str:
+    """The Rust ``&``/``&mut``/(nothing) prefix implied by an ownership decision.
+
+    ``"owner"`` and ``"move"`` both render as a plain owned value -- the
+    distinction between them is about *how* the value got here (freshly
+    bound vs. transferred from elsewhere), not about the type syntax.
+    An unrecognized directive value (see
+    ``ownership.resolver.resolve_ownership``) falls back to owned rather
+    than emitting a nonsense prefix; the conflict itself is still
+    reported via :func:`_ownership_comment` and the ownership log, never
+    silently dropped.
+    """
+
+    if decision is None:
+        return ""
+    if decision.value == "refer":
+        return "&"
+    if decision.value == "refer_mut":
+        return "&mut "
+    return ""
+
+
+def _ownership_comment(decision: "schema.OwnershipDecision | None", level: int) -> str:
+    """A reference comment for an ownership decision that wasn't a clean,
+    agreeing directive -- i.e. it was inferred, or a directive conflicted
+    with what inference would have chosen. A clean directive with no
+    conflict needs no comment; it's exactly what the user asked for.
+    """
+
+    if decision is None:
+        return ""
+    pad = _INDENT * level
+    if decision.conflict is not None:
+        return f"{pad}// OWNERSHIP CONFLICT: {decision.conflict}\n"
+    if decision.source == "inferred":
+        reason = "; ".join(decision.evidence) if decision.evidence else "no directive present"
+        return f"{pad}// OWNERSHIP (inferred '{decision.value}'): {reason}\n"
+    return ""
 
 
 def render_stmt(stmt: schema.Stmt, level: int) -> str:
@@ -100,10 +165,16 @@ def render_stmt(stmt: schema.Stmt, level: int) -> str:
             # type would just be a weaker, redundant guess).
             line = f"{pad}{stmt.target} = {render_expr(stmt.value)};{_render_trailing(stmt.comments)}"
             return f"{leading}{line}"
+        hole_comment = _hole_comment(stmt.type, level)
+        ownership_comment = _ownership_comment(stmt.ownership, level)
+        own_prefix = _ownership_prefix(stmt.ownership)
         kw = "let mut" if stmt.mutable else "let"
-        ty = _type_slot_to_rust(stmt.type)
-        line = f"{pad}{kw} {stmt.target}: {ty} = {render_expr(stmt.value)};{_render_trailing(stmt.comments)}"
-        return f"{leading}{line}"
+        ty = f"{own_prefix}{_type_slot_to_rust(stmt.type)}"
+        value_text = render_expr(stmt.value)
+        if own_prefix:
+            value_text = f"{own_prefix}{value_text}"
+        line = f"{pad}{kw} {stmt.target}: {ty} = {value_text};{_render_trailing(stmt.comments)}"
+        return f"{leading}{ownership_comment}{hole_comment}{line}"
 
     if isinstance(stmt, schema.ReturnStmt):
         value_text = f" {render_expr(stmt.value)}" if stmt.value is not None else ""
@@ -181,12 +252,20 @@ def render_function(func: schema.FunctionDefNode, level: int = 0, *, is_method: 
     leading = leading + "\n" if leading else ""
 
     param_parts = [self_kind] if is_method else []
+    hole_comments = ""
+    ownership_comments = ""
     for p in func.params:
-        param_parts.append(f"{p.name}: {_type_slot_to_rust(p.type)}")
+        hole_comments += _hole_comment(p.type, level)
+        ownership_comments += _ownership_comment(p.ownership, level)
+        own_prefix = _ownership_prefix(p.ownership)
+        param_parts.append(f"{p.name}: {own_prefix}{_type_slot_to_rust(p.type)}")
     params_text = ", ".join(param_parts)
 
-    return_text = _type_slot_to_rust(func.return_type)
-    arrow = f" -> {return_text}" if return_text != "()" else ""
+    return_hole = _hole_comment(func.return_type, level)
+    return_ownership_comment = _ownership_comment(func.return_ownership, level)
+    return_own_prefix = _ownership_prefix(func.return_ownership)
+    return_text = f"{return_own_prefix}{_type_slot_to_rust(func.return_type)}"
+    arrow = f" -> {return_text}" if _type_slot_to_rust(func.return_type) != "()" else ""
 
     body_text = "\n".join(render_stmt(s, level + 1) for s in func.body) or f"{_INDENT * (level + 1)}// (empty)"
 
@@ -195,7 +274,8 @@ def render_function(func: schema.FunctionDefNode, level: int = 0, *, is_method: 
         ambiguity_comment = f"{pad}// AMBIGUOUS[{func.ambiguity.category}]: {func.ambiguity.rationale}\n"
 
     return (
-        f"{leading}{ambiguity_comment}"
+        f"{leading}{ambiguity_comment}{ownership_comments}{hole_comments}"
+        f"{return_ownership_comment}{return_hole}"
         f"{pad}fn {func.name}({params_text}){arrow} {{\n{body_text}\n{pad}}}"
     )
 
@@ -247,11 +327,13 @@ def render_class(cls: schema.ClassDefNode) -> str:
         )
 
     field_lines = []
+    field_holes = ""
     for f in cls.fields:
+        field_holes += _hole_comment(f.type, 1)
         field_lines.append(f"{_INDENT}pub {f.name}: {_type_slot_to_rust(f.type)},")
     fields_text = "\n".join(field_lines) or f"{_INDENT}// (no fields)"
 
-    struct_text = f"pub struct {cls.name} {{\n{fields_text}\n}}"
+    struct_text = f"pub struct {cls.name} {{\n{field_holes}{fields_text}\n}}"
 
     new_params = ", ".join(f"{f.name}: {_type_slot_to_rust(f.type)}" for f in cls.fields)
     new_body = "\n".join(f"{_INDENT * 3}{f.name}," for f in cls.fields) or f"{_INDENT * 3}// (no fields)"
@@ -276,10 +358,10 @@ def render_import_note(imp: schema.ImportNode) -> str:
 
 
 def render_module(module: schema.ModuleNode) -> str:
-    """Render a full :class:`~py2rust.ir.schema.ModuleNode` to Rust source text."""
+    """Render a full :class:`~ir.schema.ModuleNode` to Rust source text."""
 
     parts: list[str] = [
-        "// Generated by py2rust -- review all AMBIGUOUS/UNSUPPORTED markers.",
+        "// Generated by code-convert-helper -- review all AMBIGUOUS/TYPE HOLE/OWNERSHIP/UNSUPPORTED markers.",
         f"// Source: {module.source_file}",
         "",
     ]
