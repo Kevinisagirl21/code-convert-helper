@@ -22,8 +22,6 @@ def test_resolve_local_package(tmp_path: Path):
 
 
 def test_resolve_third_party_installed_package(tmp_path: Path):
-    # libcst is a real installed dependency of this project, so it's a
-    # reliable stand-in for "an installed third-party package."
     resolved = import_resolver.resolve_import("libcst", tmp_path)
     assert resolved is not None
     assert not resolved.is_local

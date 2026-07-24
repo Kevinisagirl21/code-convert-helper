@@ -1,0 +1,8 @@
+[package]
+name = "clippy_check"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "clippy_check"
+path = "src/main.rs"

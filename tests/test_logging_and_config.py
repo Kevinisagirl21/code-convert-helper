@@ -1,13 +1,3 @@
-"""Tests for logging_setup and config -- Milestone 1's logging plumbing
-and warnings-as-fatal toggle.
-
-Deliberately light: Milestone 1's job is to wire the mechanism, not to
-achieve "comprehensive" logging (that grows incrementally as later
-milestones, starting with Milestone 2's ownership resolver, have real
-decisions worth logging). These tests check the plumbing works, not
-that every stage logs everything yet.
-"""
-
 from pathlib import Path
 
 import pytest
@@ -32,8 +22,6 @@ def test_configure_logging_writes_a_log_file(tmp_path: Path):
 
 
 def test_configure_logging_without_output_dir_does_not_require_a_directory():
-    # Must not raise -- this is the shape used by the standalone
-    # `preflight` CLI command, which has no output directory at all.
     configure_logging(output_dir=None)
 
 
@@ -50,4 +38,4 @@ def test_report_warning_raises_when_strict():
 
 def test_report_warning_does_not_raise_when_not_strict():
     config = PipelineConfig(warnings_as_fatal=False)
-    report_warning(config, "just a warning", code="TEST001")  # must not raise
+    report_warning(config, "just a warning", code="TEST001")

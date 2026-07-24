@@ -291,6 +291,20 @@ land):
   `ownership_log.{json,md}` does the same specifically for every ownership
   decision made during the run.
 
+**Milestone 3 addition: clippy-clean rendering.** Beyond the markers
+above, stage 5 now also aims to be clippy-clean by construction for the
+v1 core subset: a function/method's final `return expr;` renders as a
+bare tail expression (`clippy::needless_return`); binary/comparison/
+boolean/unary expressions render with real operator-precedence
+awareness instead of unconditional parens; a sequence `for` loop borrows
+(`for x in &seq`) instead of `seq.iter()` (`clippy::explicit_iter_loop`);
+a `raise`'s panic message never carries a needless `.to_string()` and
+inlines a bare-name message as a format capture; `&mut self` is only
+emitted for a method that actually mutates one of its own fields; and
+the common `x = x + y` accumulator/field-mutation shape renders as
+`x += y` (`clippy::assign_op_pattern`). See `codegen/rust_writer.py` and
+`verification/README.md`.
+
 ## Stage 6 — Verify & report
 
 - Sanity-check the generated Rust is at least syntactically parseable
@@ -351,3 +365,7 @@ iteration while the schema was still in flux — see `HANDOFF.md`.)
   (a call in the entry file resolving a converted import's function type
   directly, rather than each imported module's IR standing alone) are the
   natural next step.
+- Now that Milestone 3's core-subset codegen is clippy-clean, the next
+  natural gaps are classes (Milestone 4: struct/impl-level clippy
+  cleanliness, e.g. `derive`-able traits) and exception handling
+  (Milestone 5: `Result`/`?` propagation instead of `panic!`).

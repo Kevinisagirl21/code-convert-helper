@@ -43,14 +43,9 @@ def test_split_check_disabled_never_triggers():
 
 def test_split_check_absolute_threshold():
     input_src = "\n".join(["a"] * 400)
-    output_src = "\n".join(["b"] * 401)  # ratio ~1.0, under absolute default of 500 -> shouldn't trigger yet
+    output_src = "\n".join(["b"] * 401)
     result = check_output_length(input_src, output_src, SplitCheckConfig(absolute_line_threshold=400))
     assert result.triggered
-
-
-# ---------------------------------------------------------------------------
-# Milestone 2: ownership log + warnings-as-fatal
-# ---------------------------------------------------------------------------
 
 
 def test_ownership_log_written_and_populated(tmp_path: Path):
@@ -111,11 +106,6 @@ def test_warnings_as_fatal_on_with_all_directives_present_still_converts(tmp_pat
     assert result.fatal_warnings == []
 
 
-# ---------------------------------------------------------------------------
-# Milestone 2: import recursion
-# ---------------------------------------------------------------------------
-
-
 def test_recurse_imports_converts_local_module(tmp_path: Path):
     (tmp_path / "helper.py").write_text("def double(n: int) -> int:\n    return n * 2\n")
     src_file = tmp_path / "main.py"
@@ -150,7 +140,6 @@ def test_import_depth_limit_skips_beyond_max_depth(tmp_path: Path):
     src_file.write_text("import a\n\ndef f():\n    pass\n")
 
     out_dir = tmp_path / "out"
-    # depth 1 only reaches 'a' -- 'b' (depth 2) and 'c' (depth 3) should be skipped.
     result = pipeline.convert_file(src_file, out_dir, recurse_imports=True, import_depth=1)
 
     assert (out_dir / "ir" / "_imports" / "a.pyrir.json").exists()

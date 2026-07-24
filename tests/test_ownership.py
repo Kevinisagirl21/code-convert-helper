@@ -36,9 +36,6 @@ def test_non_copy_param_stored_in_self_attr_infers_move():
 
 
 def test_reassignment_does_not_force_refer_mut():
-    # Reassigning a Python parameter name has no observable-by-caller
-    # mutation semantics, so inference must never produce "refer_mut" --
-    # only a directive is trusted for that value.
     body = _body("name = name + '!'\nreturn name\n")
     value, _ = ownership.infer_param_ownership("name", body, schema.ConcreteType(value="String"))
     assert value != "refer_mut"
@@ -55,9 +52,6 @@ def test_return_ownership_echoes_single_param():
 
 
 def test_return_ownership_echoes_reference_param_as_reference():
-    # Returning a '&String' parameter as a plain owned 'String' would be a
-    # real type mismatch -- the return type must echo the param's own
-    # reference-ness, not always default to "owner".
     value, _ = ownership.infer_return_ownership(["x"], {"x": "refer"})
     assert value == "refer"
 

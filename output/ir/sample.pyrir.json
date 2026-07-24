@@ -1,5 +1,5 @@
 {
-  "schema_version": "v2_ownership",
+  "schema_version": "v1_core",
   "source_file": "sample.py",
   "body": [
     {
@@ -22,7 +22,16 @@
             "value": "i64",
             "kind": "concrete"
           },
-          "ownership": null
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'i64' is a Copy primitive; pass-by-value is idiomatic"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          }
         },
         {
           "name": "lo",
@@ -30,7 +39,16 @@
             "value": "i64",
             "kind": "concrete"
           },
-          "ownership": null
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'i64' is a Copy primitive; pass-by-value is idiomatic"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          }
         },
         {
           "name": "hi",
@@ -38,7 +56,16 @@
             "value": "i64",
             "kind": "concrete"
           },
-          "ownership": null
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'i64' is a Copy primitive; pass-by-value is idiomatic"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          }
         }
       ],
       "return_type": {
@@ -139,7 +166,16 @@
         "trailing": []
       },
       "ambiguity": null,
-      "return_ownership": null,
+      "return_ownership": {
+        "value": "move",
+        "source": "inferred",
+        "directive": null,
+        "evidence": [
+          "return value is constructed or computed in the function body"
+        ],
+        "conflict": null,
+        "kind": "ownership_decision"
+      },
       "kind": "function_def"
     },
     {
@@ -152,7 +188,16 @@
             "value": "i64",
             "kind": "concrete"
           },
-          "ownership": null
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'i64' is a Copy primitive; pass-by-value is idiomatic"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          }
         }
       ],
       "return_type": {
@@ -177,7 +222,16 @@
             "leading": [],
             "trailing": []
           },
-          "ownership": null,
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'total = ...' binds a new owned local by default"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          },
           "kind": "assign"
         },
         {
@@ -212,8 +266,9 @@
                 "kind": "binop"
               },
               "type": {
-                "value": "i64",
-                "kind": "concrete"
+                "id": "hole_0001",
+                "known_info": [],
+                "kind": "hole"
               },
               "mutable": true,
               "target_kind": "reassign",
@@ -221,7 +276,16 @@
                 "leading": [],
                 "trailing": []
               },
-              "ownership": null,
+              "ownership": {
+                "value": "owner",
+                "source": "inferred",
+                "directive": null,
+                "evidence": [
+                  "'total = ...' binds a new owned local by default"
+                ],
+                "conflict": null,
+                "kind": "ownership_decision"
+              },
               "kind": "assign"
             }
           ],
@@ -253,11 +317,201 @@
         "trailing": []
       },
       "ambiguity": null,
-      "return_ownership": null,
+      "return_ownership": {
+        "value": "move",
+        "source": "inferred",
+        "directive": null,
+        "evidence": [
+          "return value is constructed or computed in the function body"
+        ],
+        "conflict": null,
+        "kind": "ownership_decision"
+      },
       "kind": "function_def"
     },
     {
-      "node_id": "class_0005",
+      "node_id": "fn_0003",
+      "name": "greet",
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "value": "String",
+            "kind": "concrete"
+          },
+          "ownership": {
+            "value": "refer",
+            "source": "directive",
+            "directive": {
+              "directive_key": "ownership",
+              "value": "refer",
+              "raw_text": "#! refer",
+              "kind": "directive"
+            },
+            "evidence": [],
+            "conflict": "directive says 'refer' but usage-based inference would have chosen 'move' (returned directly from the function)",
+            "kind": "ownership_decision"
+          }
+        }
+      ],
+      "return_type": {
+        "value": "String",
+        "kind": "concrete"
+      },
+      "body": [
+        {
+          "value": {
+            "name": "name",
+            "kind": "name"
+          },
+          "comments": {
+            "leading": [
+              {
+                "text": "# 'name' is only read here, so a borrow avoids an unnecessary clone;",
+                "confidence": 1.0
+              },
+              {
+                "text": "# the return type echoes that same reference automatically.",
+                "confidence": 1.0
+              }
+            ],
+            "trailing": []
+          },
+          "kind": "return"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 20,
+        "end_line": 25
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": null,
+      "return_ownership": {
+        "value": "refer",
+        "source": "inferred",
+        "directive": null,
+        "evidence": [
+          "returns parameter 'name' unchanged, itself resolved as 'refer'"
+        ],
+        "conflict": null,
+        "kind": "ownership_decision"
+      },
+      "kind": "function_def"
+    },
+    {
+      "node_id": "fn_0004",
+      "name": "build_greeting",
+      "params": [
+        {
+          "name": "name",
+          "type": {
+            "value": "String",
+            "kind": "concrete"
+          },
+          "ownership": {
+            "value": "move",
+            "source": "directive",
+            "directive": {
+              "directive_key": "ownership",
+              "value": "move",
+              "raw_text": "#! move",
+              "kind": "directive"
+            },
+            "evidence": [],
+            "conflict": "directive says 'move' but usage-based inference would have chosen 'refer' ('name' is only read or passed along; never stored or returned)",
+            "kind": "ownership_decision"
+          }
+        }
+      ],
+      "return_type": {
+        "value": "String",
+        "kind": "concrete"
+      },
+      "body": [
+        {
+          "target": "greeting",
+          "value": {
+            "name": "name",
+            "kind": "name"
+          },
+          "type": {
+            "id": "hole_0002",
+            "known_info": [],
+            "kind": "hole"
+          },
+          "mutable": false,
+          "target_kind": "name",
+          "comments": {
+            "leading": [
+              {
+                "text": "# ownership transfers into 'greeting' below, so the parameter itself",
+                "confidence": 1.0
+              },
+              {
+                "text": "# is consumed rather than borrowed.",
+                "confidence": 1.0
+              }
+            ],
+            "trailing": []
+          },
+          "ownership": {
+            "value": "owner",
+            "source": "directive",
+            "directive": {
+              "directive_key": "ownership",
+              "value": "owner",
+              "raw_text": "#! owner",
+              "kind": "directive"
+            },
+            "evidence": [],
+            "conflict": null,
+            "kind": "ownership_decision"
+          },
+          "kind": "assign"
+        },
+        {
+          "value": {
+            "name": "greeting",
+            "kind": "name"
+          },
+          "comments": {
+            "leading": [],
+            "trailing": []
+          },
+          "kind": "return"
+        }
+      ],
+      "source_span": {
+        "file": "sample.py",
+        "start_line": 28,
+        "end_line": 34
+      },
+      "comments": {
+        "leading": [],
+        "trailing": []
+      },
+      "ambiguity": null,
+      "return_ownership": {
+        "value": "owner",
+        "source": "directive",
+        "directive": {
+          "directive_key": "ownership",
+          "value": "owner",
+          "raw_text": "#! owner",
+          "kind": "directive"
+        },
+        "evidence": [],
+        "conflict": "directive says 'owner' but usage-based inference would have chosen 'move' (return value is constructed or computed in the function body)",
+        "kind": "ownership_decision"
+      },
+      "kind": "function_def"
+    },
+    {
+      "node_id": "class_0007",
       "name": "Counter",
       "fields": [
         {
@@ -277,7 +531,7 @@
       ],
       "methods": [
         {
-          "node_id": "fn_0003",
+          "node_id": "fn_0005",
           "name": "increment",
           "params": [
             {
@@ -286,7 +540,16 @@
                 "value": "i64",
                 "kind": "concrete"
               },
-              "ownership": null
+              "ownership": {
+                "value": "owner",
+                "source": "inferred",
+                "directive": null,
+                "evidence": [
+                  "'i64' is a Copy primitive; pass-by-value is idiomatic"
+                ],
+                "conflict": null,
+                "kind": "ownership_decision"
+              }
             }
           ],
           "return_type": {
@@ -322,7 +585,16 @@
                 "leading": [],
                 "trailing": []
               },
-              "ownership": null,
+              "ownership": {
+                "value": "owner",
+                "source": "inferred",
+                "directive": null,
+                "evidence": [
+                  "'self.value = ...' binds a new owned local by default"
+                ],
+                "conflict": null,
+                "kind": "ownership_decision"
+              },
               "kind": "assign"
             },
             {
@@ -376,19 +648,28 @@
           ],
           "source_span": {
             "file": "sample.py",
-            "start_line": 27,
-            "end_line": 31
+            "start_line": 44,
+            "end_line": 48
           },
           "comments": {
             "leading": [],
             "trailing": []
           },
           "ambiguity": null,
-          "return_ownership": null,
+          "return_ownership": {
+            "value": "move",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "function has no return value"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          },
           "kind": "function_def"
         },
         {
-          "node_id": "fn_0004",
+          "node_id": "fn_0006",
           "name": "report",
           "params": [],
           "return_type": {
@@ -467,22 +748,31 @@
           ],
           "source_span": {
             "file": "sample.py",
-            "start_line": 33,
-            "end_line": 36
+            "start_line": 50,
+            "end_line": 53
           },
           "comments": {
             "leading": [],
             "trailing": []
           },
           "ambiguity": null,
-          "return_ownership": null,
+          "return_ownership": {
+            "value": "move",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "return value is constructed or computed in the function body"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          },
           "kind": "function_def"
         }
       ],
       "source_span": {
         "file": "sample.py",
-        "start_line": 20,
-        "end_line": 36
+        "start_line": 37,
+        "end_line": 53
       },
       "comments": {
         "leading": [],
@@ -500,21 +790,36 @@
       "kind": "class_def"
     },
     {
-      "node_id": "fn_0006",
+      "node_id": "fn_0008",
       "name": "fetch_data",
       "params": [
         {
           "name": "url",
           "type": {
-            "value": "String",
-            "kind": "concrete"
+            "id": "hole_0003",
+            "known_info": [
+              "no type hint; not yet inferred from call sites"
+            ],
+            "kind": "hole"
           },
-          "ownership": null
+          "ownership": {
+            "value": "refer",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'url' is only read or passed along; never stored or returned"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          }
         }
       ],
       "return_type": {
-        "value": "String",
-        "kind": "concrete"
+        "id": "hole_0004",
+        "known_info": [
+          "returns 'response', type not resolved"
+        ],
+        "kind": "hole"
       },
       "body": [
         {
@@ -537,8 +842,9 @@
             "kind": "call"
           },
           "type": {
-            "value": "String",
-            "kind": "concrete"
+            "id": "hole_0005",
+            "known_info": [],
+            "kind": "hole"
           },
           "mutable": false,
           "target_kind": "name",
@@ -551,7 +857,16 @@
             ],
             "trailing": []
           },
-          "ownership": null,
+          "ownership": {
+            "value": "owner",
+            "source": "inferred",
+            "directive": null,
+            "evidence": [
+              "'response = ...' binds a new owned local by default"
+            ],
+            "conflict": null,
+            "kind": "ownership_decision"
+          },
           "kind": "assign"
         },
         {
@@ -568,15 +883,24 @@
       ],
       "source_span": {
         "file": "sample.py",
-        "start_line": 39,
-        "end_line": 41
+        "start_line": 56,
+        "end_line": 58
       },
       "comments": {
         "leading": [],
         "trailing": []
       },
       "ambiguity": null,
-      "return_ownership": null,
+      "return_ownership": {
+        "value": "move",
+        "source": "inferred",
+        "directive": null,
+        "evidence": [
+          "return value is constructed or computed in the function body"
+        ],
+        "conflict": null,
+        "kind": "ownership_decision"
+      },
       "kind": "function_def"
     }
   ]

@@ -17,8 +17,8 @@ On top of the v1 core subset, this build adds:
 * **`#!` same-line directives** for ownership: `#! owner`, `#! refer`,
   `#! refer_mut`, `#! move`, attachable to a parameter's trailing comma,
   a function's `-> ReturnType:` line, or an assignment. See
-  `PLUGIN_API.md`... actually see `ROADMAP.md` milestone 2 and
-  `src/directives/parser.py` for the exact grammar.
+  `ROADMAP.md` milestone 2 and `src/directives/parser.py` for the exact
+  grammar.
 * **Usage-based ownership inference** when no directive is present
   (`src/ownership/resolver.py`), logged to `ownership_log.json`/`.md`
   and printed as a warning -- or a hard failure under
@@ -26,6 +26,31 @@ On top of the v1 core subset, this build adds:
 * **Import recursion**: `code-convert-helper convert` follows local and installed
   third-party imports by default (`--recurse-imports`, default on;
   `--import-depth`, default 5), converting each one under `ir/_imports/`.
+
+## Milestone 3: clippy-clean codegen
+
+Generated Rust for the core subset now aims to be clippy-clean *by
+construction*, not just readable:
+
+* `clippy::needless_return` -- a function/method's final `return expr;`
+  renders as a bare tail expression (early returns elsewhere are left
+  untouched, since they're genuine control flow).
+* Unnecessary parentheses -- expressions render with real
+  operator-precedence awareness, so parens appear only where Rust's
+  grammar actually requires them.
+* `clippy::explicit_iter_loop` -- `for x in seq.iter()` renders as
+  `for x in &seq`.
+* Needless `.to_string()` in `panic!` messages is gone; a literal
+  message panics directly, a bare name uses an inlined format capture.
+* `clippy::uninlined_format_args` -- `println!("{}", x)` renders as
+  `println!("{x}")` for a plain variable.
+* `&mut self` is only emitted for a method that actually mutates one of
+  its own fields.
+* `clippy::assign_op_pattern` -- `x = x + y` renders as `x += y` where
+  the shape is unambiguous.
+
+See `verification/README.md` for how to check this with `cargo clippy`
+against a real Rust toolchain (not available in this sandbox).
 
 ## Install
 
@@ -80,6 +105,12 @@ Every generated `.rs` file may contain these marker comments:
   construct outside the v1 core subset, with the exact original Python
   kept verbatim for a future revision (or a human) to pick up.
 
+Beyond the markers, the code itself (Milestone 3) is written to be
+clippy-clean: bare tail-expression returns, precedence-correct
+parentheses, `&expr` sequence iteration, inlined `panic!`/`println!`
+format args, `&mut self` only where a field is actually mutated, and
+`+=`-style compound assignment where sound.
+
 None of these are configurable via a rules file, by design -- see
 `PROJECT_OVERVIEW.md`'s second principle. Tooling behavior (like the
 split-check thresholds, `--warnings-as-fatal`, and import-recursion depth
@@ -97,7 +128,7 @@ src/
     ir/               the IR schema, CST -> IR builder, and (de)serialization
     typing_inference/ literal- and hint-based type inference, type holes
     ambiguity/        ambiguity markers (collection types, class shape, ...)
-    codegen/          IR -> Rust text rendering
+    codegen/          IR -> Rust text rendering (Milestone 3: clippy-clean)
     plugins/          the subprocess plugin protocol + built-in plugins
     report/           run summary, ambiguities.md, ownership_log, split-length check
     pipeline.py       wires every stage together
@@ -105,6 +136,7 @@ src/
 docs/                 Sphinx documentation (see below)
 tests/                pytest test suite
 examples/             a sample Python file to try the tool on
+verification/         Milestone 3: Cargo project for local `cargo clippy` verification
 ```
 
 ## Building the docs

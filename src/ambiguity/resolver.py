@@ -90,7 +90,7 @@ def mark_for_loop(iter_kind: str) -> schema.Ambiguity | None:
     if iter_kind == "sequence":
         return schema.Ambiguity(
             category="iteration-style",
-            chosen=".iter()",
+            chosen="&expr",
             alternatives=[".into_iter() (if ownership of elements should move)"],
             rationale=(
                 "Iterating by shared reference is the safe default; switch "

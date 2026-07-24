@@ -1,1 +1,0 @@
-"""Stage 5 code generation: convert IR to Rust source text."""

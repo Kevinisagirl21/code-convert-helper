@@ -144,3 +144,13 @@ and are never pluggable, since they govern language-level correctness
 Only the *stdlib/crate substitution* side of Milestone 2 (porting the
 existing `crate_substitution` plugin, milestone 6) remains suggest-only
 and plugin-based.
+
+## Milestone 3 note: clippy-cleanliness is not a plugin hook either
+
+Same reasoning as ownership: whether generated Rust triggers a clippy
+lint (`needless_return`, unnecessary parens, `explicit_iter_loop`,
+`assign_op_pattern`, etc.) is a property of the core renderer
+(`codegen/rust_writer.py`), not ecosystem taste -- there's exactly one
+correct, idiomatic rendering for e.g. "this is a function's tail
+return", and it doesn't vary by project or house style the way a crate
+substitution preference might.

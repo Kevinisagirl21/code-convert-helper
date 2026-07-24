@@ -396,8 +396,8 @@ class ForStmt:
 
     ``iter_kind`` records whether the iterable was recognized as a
     ``range(...)`` call (translated to a Rust range expression) or a
-    generic sequence (translated to ``.iter()``) -- this itself is an
-    ambiguity-adjacent decision worth keeping explicit rather than
+    generic sequence (translated to ``&expr`` iteration) -- this itself is
+    an ambiguity-adjacent decision worth keeping explicit rather than
     silently picking one.
     """
 

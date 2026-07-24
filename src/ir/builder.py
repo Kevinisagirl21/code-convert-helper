@@ -1,19 +1,4 @@
-"""Stages 1-4: parse Python source, build the IR, mark ambiguities.
-
-This is the front end's core: it walks a ``libcst`` concrete syntax tree
-(chosen specifically because it keeps every comment attached to the node
-it belongs to -- no heuristic re-association needed) and produces the
-:mod:`ir.schema` data structures that get serialized to disk.
-
-Only the v1 core subset is understood here. Anything else becomes an
-:class:`~ir.schema.UnsupportedStmt` carrying the exact original
-source text, per the "capture, don't drop" principle in
-``ARCHITECTURE.md``.
-
-Milestone 2 adds ``#!`` directive recognition and ownership resolution at
-the three sites the roadmap specifies: parameters, return types, and
-assignments (see :mod:`directives.parser` and :mod:`ownership.resolver`).
-"""
+"""Stages 1-4: parse Python source, build the IR, mark ambiguities."""
 
 from __future__ import annotations
 
@@ -32,8 +17,6 @@ _node_counter = itertools.count(1)
 
 
 def reset_node_counter() -> None:
-    """Reset the node ID counter. Mainly useful for deterministic tests."""
-
     global _node_counter
     _node_counter = itertools.count(1)
 
@@ -66,23 +49,12 @@ _BOOL_OPS = {
 
 
 class IRBuilder:
-    """Builds a :class:`~ir.schema.ModuleNode` from Python source.
-
-    One builder instance corresponds to one source file. Position lookups
-    are resolved once up front via ``libcst``'s metadata system.
-    """
-
     def __init__(self, source: str, source_file: str) -> None:
         self._source_file = source_file
         wrapper = cst.MetadataWrapper(cst.parse_module(source))
         self._positions: dict[cst.CSTNode, CodeRange] = wrapper.resolve(PositionProvider)
         self._module = wrapper.module
-        # Populated while building a class's methods, so a `self.x = ...`
-        # assignment can reuse the field type already established by the
-        # constructor instead of re-deriving a fresh (usually emptier) hole.
         self._current_field_types: dict[str, schema.TypeSlot] = {}
-
-    # -- helpers -----------------------------------------------------
 
     def _span(self, node: cst.CSTNode) -> schema.SourceSpan:
         pos = self._positions.get(node)
@@ -114,14 +86,8 @@ class IRBuilder:
         )
 
     def _compound_comments(self, node: cst.CSTNode) -> schema.Comments:
-        """Leading/header comments for If/While/For (no same-line trailing
-        capture for compound statements in v1 -- see ARCHITECTURE.md open
-        questions)."""
-
         leading_lines = getattr(node, "leading_lines", ())
         return schema.Comments(leading=self._leading_comments(leading_lines))
-
-    # -- directive helpers (Milestone 2) ---------------------------------
 
     def _directive_from_comment_text(self, text: str | None) -> schema.Directive | None:
         if text is None:
@@ -131,25 +97,11 @@ class IRBuilder:
     def _assignment_directive(
         self, trailing_whitespace: cst.TrailingWhitespace | None
     ) -> schema.Directive | None:
-        """A ``#!`` directive on an assignment's own trailing comment."""
-
         if trailing_whitespace is None or trailing_whitespace.comment is None:
             return None
         return self._directive_from_comment_text(trailing_whitespace.comment.value)
 
     def _param_directive(self, param: cst.Param) -> schema.Directive | None:
-        """A ``#!`` directive trailing a parameter's comma.
-
-        Only reachable when the parameter has an explicit trailing comma
-        (the common, e.g. Black-formatted, multi-line style) -- a
-        directive on a parameter with no following comma (e.g. the very
-        last parameter written on one line with the closing paren) has
-        nowhere in the CST to attach to and is simply not recognized in
-        v1. This is a real limitation, not a silent bug: such a
-        parameter just falls back to usage-based inference like any
-        parameter with no directive at all.
-        """
-
         comma = param.comma
         if not isinstance(comma, cst.Comma):
             return None
@@ -160,8 +112,6 @@ class IRBuilder:
         return self._directive_from_comment_text(first_line.comment.value)
 
     def _return_type_directive(self, body: cst.BaseSuite) -> schema.Directive | None:
-        """A ``#!`` directive trailing a function's ``-> ReturnType:`` line."""
-
         if not isinstance(body, cst.IndentedBlock):
             return None
         header = body.header
@@ -169,25 +119,14 @@ class IRBuilder:
             return None
         return self._directive_from_comment_text(header.comment.value)
 
-    # -- expressions ---------------------------------------------------
-
     def build_expr(self, node: cst.BaseExpression) -> schema.Expr:
         if isinstance(node, cst.Integer):
-            # base=0 lets int() auto-detect 0x/0o/0b prefixes and tolerate
-            # underscore separators (e.g. `1_000`, `0x1A`) -- real-world
-            # Python source (especially third-party code reached via
-            # import recursion) uses far more than plain decimal literals.
             return schema.ConstantExpr(value=int(node.value, 0), py_type="int")
         if isinstance(node, cst.Float):
             return schema.ConstantExpr(value=float(node.value), py_type="float")
         if isinstance(node, (cst.SimpleString, cst.ConcatenatedString)):
             evaluated = node.evaluated_value
             if isinstance(evaluated, bytes):
-                # A bytes literal (b"...") isn't part of the v1 core
-                # subset's string type -- fall through to the
-                # unrecognized-expression placeholder below rather than
-                # smuggling a non-JSON-serializable `bytes` value into
-                # the IR as if it were a plain str constant.
                 return schema.NameExpr(name=f"/* unrecognized: {self._source_text(node)} */")
             return schema.ConstantExpr(value=evaluated, py_type="str")
         if isinstance(node, cst.Name):
@@ -239,11 +178,7 @@ class IRBuilder:
                     keys.append(self.build_expr(el.key))
                     values.append(self.build_expr(el.value))
             return schema.DictExpr(keys=keys, values=values)
-        # Fall back to a name-like placeholder rather than raising, so one
-        # unrecognized expression doesn't take down the whole statement.
         return schema.NameExpr(name=f"/* unrecognized: {self._source_text(node)} */")
-
-    # -- statements ------------------------------------------------------
 
     def build_stmt(self, stmt: cst.BaseStatement, sibling_body: list[cst.BaseStatement]) -> schema.Stmt:
         if isinstance(stmt, cst.SimpleStatementLine):
@@ -300,8 +235,6 @@ class IRBuilder:
         if isinstance(small, cst.Assign):
             directive = self._assignment_directive(node.trailing_whitespace)
             if directive is not None:
-                # A recognized directive is metadata, not documentation --
-                # don't also duplicate it as an ordinary trailing comment.
                 comments.trailing = []
             target = small.targets[0].target
             if (
@@ -364,8 +297,6 @@ class IRBuilder:
         statements = list(body.body)
         return [self.build_stmt(s, statements) for s in statements]
 
-    # -- top level -------------------------------------------------------
-
     def build_function(self, node: cst.FunctionDef) -> schema.FunctionDefNode:
         body_stmts = list(node.body.body) if isinstance(node.body, cst.IndentedBlock) else []
 
@@ -373,9 +304,6 @@ class IRBuilder:
         param_type_lookup: dict[str, schema.TypeSlot] = {}
         for i, p in enumerate(node.params.params):
             if i == 0 and p.name.value == "self":
-                # Rust methods take &self / &mut self implicitly; not a
-                # regular typed parameter. See codegen for the self-vs-
-                # mut-self heuristic.
                 continue
             annotated = infer.type_from_annotation(p.annotation)
             if annotated is not None:
@@ -396,10 +324,6 @@ class IRBuilder:
         if explicit_return is not None:
             return_type = explicit_return
         else:
-            # No annotation -- infer from the body's `return` statements
-            # rather than silently defaulting to `()`, which would produce
-            # a signature that doesn't match a body that actually returns
-            # a value (a real compile error, not a conservative default).
             return_type = infer.infer_return_type(
                 body_stmts,
                 param_type_lookup,
@@ -441,7 +365,7 @@ class IRBuilder:
                     texts.append(self._source_text(node.value))
 
             def visit_FunctionDef(inner_self, node: cst.FunctionDef) -> bool:
-                return False  # don't descend into nested function defs
+                return False
 
         for stmt in body:
             stmt.visit(_ReturnTextFinder())
@@ -454,9 +378,6 @@ class IRBuilder:
 
         body = node.body.body if isinstance(node.body, cst.IndentedBlock) else []
 
-        # First pass: find __init__ (if any) and derive field types from it,
-        # so the second pass can let other methods' `self.x = ...` reuse
-        # those types instead of re-deriving weaker evidence.
         for member in body:
             if isinstance(member, cst.FunctionDef) and member.name.value == "__init__":
                 fields = self._fields_from_init(member)
@@ -487,9 +408,6 @@ class IRBuilder:
         if not isinstance(init.body, cst.IndentedBlock):
             return fields
 
-        # Build a lookup of __init__ parameter -> inferred type, so the very
-        # common `self.x = x` passthrough can reuse the parameter's type
-        # instead of re-deriving (usually empty) evidence from scratch.
         param_types: dict[str, schema.TypeSlot] = {}
         for p in init.params.params:
             if p.name.value == "self":
@@ -525,15 +443,6 @@ class IRBuilder:
         field_name: str,
         sibling_body: list[cst.BaseStatement],
     ) -> schema.TypeSlot:
-        """Resolve a ``self.x = <value>`` field type, preferring a known
-        constructor-parameter type over generic inference where possible.
-
-        Handles the direct passthrough (``self.x = x``) and the common
-        "wrap a parameter in a collection literal" case (``self.x = [x]``),
-        since both are extremely common in ``__init__`` and a bare literal
-        inference pass alone can't see the parameter's type.
-        """
-
         if isinstance(value, cst.Name) and value.value in param_types:
             return param_types[value.value]
 
@@ -589,22 +498,6 @@ class IRBuilder:
 
 
 def apply_mutability(body: list[schema.Stmt]) -> None:
-    """Turn a name assigned more than once into ``let mut`` + reassignment.
-
-    Without this pass, a loop accumulator like ``total = total + i``
-    inside a ``for`` loop would re-emit ``let total: ... = ...`` on every
-    textual occurrence, which shadows rather than mutates and silently
-    produces the wrong Rust semantics for the classic accumulator pattern.
-
-    This is a flat, order-based heuristic, not real scope analysis: it
-    assumes a name reassigned anywhere in the function refers to the same
-    binding. That's true for the common cases this prototype targets
-    (accumulators, running totals) but could misfire for two
-    independently-scoped variables in different ``if``/``else`` branches
-    that happen to share a name. A real per-block scope resolver is a
-    natural next step (see ``ARCHITECTURE.md``).
-    """
-
     counts: dict[str, int] = {}
 
     def _count(stmts: list[schema.Stmt]) -> None:
@@ -640,23 +533,10 @@ def apply_mutability(body: list[schema.Stmt]) -> None:
 
 
 def build_module_ir(source: str, source_file: str) -> schema.ModuleNode:
-    """Convenience entry point: parse ``source`` and build its IR in one call."""
-
     return IRBuilder(source, source_file).build_module()
 
 
 def apply_collection_ambiguities(module: schema.ModuleNode) -> None:
-    """Walk a built module and attach collection-type ambiguity markers.
-
-    Separate from :meth:`IRBuilder.build_module` so the "mark ambiguities"
-    stage stays a distinct, independently testable pipeline step (stage 4
-    in ``ARCHITECTURE.md``), even though in this prototype it's cheap
-    enough to run as a follow-up walk rather than a full IR-to-IR pass.
-    """
-
-    def _mark_type_slot(slot: schema.TypeSlot) -> schema.TypeSlot:
-        return slot
-
     def _walk_stmt(stmt: schema.Stmt) -> None:
         if isinstance(stmt, schema.AssignStmt) and isinstance(stmt.type, schema.ConcreteType):
             marker = ambiguity.mark_collection_type(stmt.type)

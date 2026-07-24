@@ -1,9 +1,4 @@
-"""The ``code-convert-helper`` command-line interface.
-
-Built with `typer <https://typer.tiangolo.com/>`_ -- arguments and options
-are driven by type hints, which fits a project whose whole subject is
-type inference. Run ``code-convert-helper --help`` for the full command list.
-"""
+"""The ``code-convert-helper`` command-line interface."""
 
 from __future__ import annotations
 
@@ -83,7 +78,16 @@ def convert(
         5, "--import-depth", help="Maximum import-recursion depth from the entry file."
     ),
 ) -> None:
-    """Convert FILE to Rust, writing output, IR, and an ambiguity report."""
+    """Convert FILE to Rust, writing output, IR, and an ambiguity report.
+
+    Generated Rust now aims to be clippy-clean by construction (Milestone
+    3): tail returns are bare expressions (no ``needless_return``),
+    parentheses are only emitted where operator precedence actually
+    requires them, sequence iteration borrows with ``&expr`` instead of
+    ``.iter()``, ``panic!``/``println!`` use inlined format args with no
+    redundant ``.to_string()``, and ``&mut self`` is only emitted for
+    methods that actually mutate a field.
+    """
 
     split_config = SplitCheckConfig(
         ratio_threshold=split_ratio, absolute_line_threshold=split_lines, enabled=split_check

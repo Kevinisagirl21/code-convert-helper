@@ -122,13 +122,7 @@ def test_ir_round_trips_through_disk(tmp_path: Path):
     storage.save_module(module, path)
     loaded = storage.load_module(path)
     assert loaded == module
-    # locked read-only, per ARCHITECTURE.md
     assert not (path.stat().st_mode & 0o200)
-
-
-# ---------------------------------------------------------------------------
-# Milestone 2: directive parsing + ownership resolution
-# ---------------------------------------------------------------------------
 
 
 def test_param_directive_is_recognized_via_trailing_comma_comment():
@@ -174,9 +168,6 @@ def test_param_returned_directly_infers_move():
 
 
 def test_param_stored_into_self_attr_infers_move():
-    # __init__ itself doesn't go through build_function (its params only
-    # feed struct field inference), so this uses a regular method instead
-    # to exercise the same "stored into self.attr" ownership heuristic.
     src = (
         "class C:\n"
         "    def __init__(self):\n"
@@ -191,7 +182,6 @@ def test_param_stored_into_self_attr_infers_move():
 
 
 def test_directive_conflicting_with_inference_is_recorded_not_dropped():
-    src = "def f(name: str):  \n    return 1\n"  # placeholder, real case below
     src = (
         "def f(\n"
         "    name: str,  #! refer_mut\n"
@@ -210,7 +200,7 @@ def test_directive_conflicting_with_inference_is_recorded_not_dropped():
 def test_unrecognized_directive_keyword_is_a_conflict():
     src = (
         "def f(\n"
-        "    name: str,  #! own\n"  # roadmap spelling, not the actual keyword
+        "    name: str,  #! own\n"
         ") -> str:\n"
         "    return name\n"
     )
@@ -236,7 +226,6 @@ def test_assignment_directive_recognized_and_stripped_from_comments():
     assign = fn.body[0]
     assert assign.ownership.source == "directive"
     assert assign.ownership.value == "move"
-    # the directive shouldn't also show up as an ordinary trailing comment
     assert assign.comments.trailing == []
 
 

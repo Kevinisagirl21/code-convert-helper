@@ -1,11 +1,4 @@
-"""Tests for typing_inference.resolver.TypeResolver.
-
-Covers the mandatory-hint rules from the Milestone 1 design interview:
-strict-everywhere hints, the flat first-hint-wins lookup for
-reassignment/augmented-assignment, deriving a local/self-attribute's type
-from an already-hinted name, `for`-loop derivation, and hard-rejecting
-tuple-unpacking.
-"""
+"""Tests for typing_inference.resolver.TypeResolver."""
 
 import libcst as cst
 import pytest
@@ -26,9 +19,6 @@ def _expr(src: str) -> cst.BaseExpression:
     return cst.parse_expression(src)
 
 
-# -- params / return -------------------------------------------------------
-
-
 def test_param_with_hint_resolves():
     r = TypeResolver()
     assert r.resolve_param("x", _annotation("int")) == schema.ConcreteType(value="i64")
@@ -44,9 +34,6 @@ def test_return_missing_hint_is_mandatory_hint_error():
     r = TypeResolver()
     with pytest.raises(MandatoryHintError, match="f"):
         r.resolve_return("f", None)
-
-
-# -- first assignment / reassignment / augmented assignment -----------------
 
 
 def test_first_assignment_requires_a_hint():
@@ -102,9 +89,6 @@ def test_cannot_derive_from_unhinted_name_is_an_error():
         r.resolve_assignment("value", None, _expr("unknown_name"))
 
 
-# -- self.attr ---------------------------------------------------------------
-
-
 def test_self_attr_first_assignment_requires_a_hint():
     r = TypeResolver()
     with pytest.raises(MandatoryHintError, match="self.x"):
@@ -119,11 +103,8 @@ def test_self_attr_derives_from_hinted_param_passthrough():
 
 
 def test_self_attr_and_local_of_same_name_do_not_collide():
-    """A local `x` and a `self.x` field are tracked under separate keys,
-    so one being hinted doesn't silently satisfy the other."""
-
     r = TypeResolver()
-    r.resolve_assignment("x", _annotation("str"), _expr('"hi"'))  # local x: str
+    r.resolve_assignment("x", _annotation("str"), _expr('"hi"'))
     with pytest.raises(MandatoryHintError):
         r.resolve_assignment("x", None, _expr("5"), is_self_attr=True)
 
@@ -133,9 +114,6 @@ def test_self_attr_reassignment_exempt():
     r.resolve_assignment("x", _annotation("int"), _expr("5"), is_self_attr=True)
     resolved = r.resolve_assignment("x", None, _expr("10"), is_self_attr=True)
     assert resolved == schema.ConcreteType(value="i64")
-
-
-# -- for loops -----------------------------------------------------------
 
 
 def test_for_range_resolves_to_int():
@@ -162,9 +140,6 @@ def test_for_sequence_over_unknown_iterable_is_an_error():
     r = TypeResolver()
     with pytest.raises(MandatoryHintError):
         r.resolve_for_target("x", "sequence", _expr("unknown_list"))
-
-
-# -- tuple-unpacking rejection ------------------------------------------------
 
 
 def test_reject_tuple_unpacking_raises():

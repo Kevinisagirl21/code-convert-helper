@@ -1,11 +1,4 @@
-"""Serializing IR to disk, and loading it back.
-
-The IR file is a real artifact, not a throwaway cache: :func:`save_module`
-writes it as formatted JSON and then marks it read-only, so nothing --
-including this tool's own later stages -- can hand-edit it and break the
-invariants the schema depends on. See ``ARCHITECTURE.md`` for the full
-rationale and the planned upgrade path for future schema versions.
-"""
+"""Serializing IR to disk, and loading it back."""
 
 from __future__ import annotations
 
@@ -18,9 +11,6 @@ from typing import Any
 
 from ir import schema
 
-# Maps a node's "kind" tag to the dataclass that should be reconstructed
-# from it. Every dataclass in schema.py that can appear inside a Stmt/Expr
-# union or as a top-level body entry must be registered here.
 _EXPR_REGISTRY: dict[str, type] = {
     "constant": schema.ConstantExpr,
     "name": schema.NameExpr,
@@ -54,26 +44,14 @@ _TOP_LEVEL_REGISTRY: dict[str, type] = {
     "import": schema.ImportNode,
 }
 
-# Field names whose values are themselves expressions (single or list) or
-# statement lists, and therefore need tagged-union reconstruction rather
-# than being treated as plain data.
 _EXPR_FIELDS = {"value", "left", "right", "operand", "func", "test", "index", "iter", "message"}
 _EXPR_LIST_FIELDS = {"values", "args", "elements", "keys"}
 _STMT_LIST_FIELDS = {"body", "orelse"}
 
-# Fields whose values are an OwnershipDecision (or None).
 _OWNERSHIP_FIELDS = {"ownership", "return_ownership"}
 
 
 def module_to_dict(module: schema.ModuleNode) -> dict[str, Any]:
-    """Convert a :class:`~ir.schema.ModuleNode` to a plain JSON-safe dict.
-
-    ``dataclasses.asdict`` recurses into nested dataclasses based on their
-    *actual* runtime type, so this works uniformly across the tagged
-    unions defined in :mod:`ir.schema` without needing a per-class
-    ``to_dict`` method.
-    """
-
     return dataclasses.asdict(module)
 
 
@@ -122,8 +100,6 @@ def _reconstruct_ownership(data: dict[str, Any] | None) -> schema.OwnershipDecis
 
 
 def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
-    """Rebuild one dataclass instance, recursing into known nested shapes."""
-
     kwargs: dict[str, Any] = {}
     field_names = {f.name for f in dataclasses.fields(cls)}
     for key, value in data.items():
@@ -174,8 +150,6 @@ def _reconstruct_node(cls: type, data: dict[str, Any]) -> Any:
 
 
 def module_from_dict(data: dict[str, Any]) -> schema.ModuleNode:
-    """Reconstruct a :class:`~ir.schema.ModuleNode` from its dict form."""
-
     body = []
     for entry in data.get("body", []):
         cls = _TOP_LEVEL_REGISTRY.get(entry["kind"])
@@ -190,20 +164,8 @@ def module_from_dict(data: dict[str, Any]) -> schema.ModuleNode:
 
 
 def save_module(module: schema.ModuleNode, path: Path, *, read_only: bool = True) -> None:
-    """Write ``module`` to ``path`` as formatted JSON, then lock it read-only.
-
-    Parameters
-    ----------
-    read_only:
-        Set to ``False`` only for the tool's own internal upgrade passes
-        (see ``ARCHITECTURE.md``). User-facing runs should always leave
-        this ``True``.
-    """
-
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
-        # A prior locked file: unlock briefly so we can overwrite it, this
-        # run's output is authoritative for this invocation.
         os.chmod(path, stat.S_IWUSR | stat.S_IRUSR)
     path.write_text(json.dumps(module_to_dict(module), indent=2), encoding="utf-8")
     if read_only:
@@ -211,11 +173,5 @@ def save_module(module: schema.ModuleNode, path: Path, *, read_only: bool = True
 
 
 def load_module(path: Path) -> schema.ModuleNode:
-    """Read an IR file back into a :class:`~ir.schema.ModuleNode`.
-
-    Read-only permissions on the file are not touched by this function --
-    loading an IR file for inspection should never require unlocking it.
-    """
-
     data = json.loads(path.read_text(encoding="utf-8"))
     return module_from_dict(data)
